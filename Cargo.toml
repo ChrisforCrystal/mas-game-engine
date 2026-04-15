@@ -1,0 +1,13 @@
+[workspace]
+members = [
+  "crates/engine-core",
+  "apps/local-match",
+  "apps/http-match",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+version = "0.1.0"
+

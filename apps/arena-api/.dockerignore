@@ -1,0 +1,10 @@
+target/
+.git/
+artifacts/
+*.db
+scripts/
+docs/
+web/
+maps/
+deploy/
+*.md

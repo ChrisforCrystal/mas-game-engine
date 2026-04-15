@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arena-api
+  namespace: arena
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arena-api
+  template:
+    metadata:
+      labels:
+        app: arena-api
+    spec:
+      initContainers:
+        # 把 http-match 二进制从镜像里复制到共享 emptyDir
+        - name: copy-http-match
+          image: your-registry/http-match:latest   # 替换成你的镜像
+          command: ["cp", "/http-match", "/shared/http-match"]
+          volumeMounts:
+            - name: shared-bin
+              mountPath: /shared
+      containers:
+        - name: arena-api
+          image: your-registry/arena-api:latest    # 替换成你的镜像
+          ports:
+            - containerPort: 9090
+          env:
+            - name: ARENA_MAPS_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: arena-config
+                  key: ARENA_MAPS_DIR
+          volumeMounts:
+            - name: shared-bin
+              mountPath: /app/http-match
+              subPath: http-match
+            - name: arena-db
+              mountPath: /app/arena.db
+              subPath: arena.db
+            - name: arena-replays
+              mountPath: /app/artifacts/replays
+            - name: arena-maps
+              mountPath: /app/maps
+          livenessProbe:
+            httpGet:
+              path: /bots
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: shared-bin
+          emptyDir: {}
+        - name: arena-db
+          persistentVolumeClaim:
+            claimName: arena-db
+        - name: arena-replays
+          persistentVolumeClaim:
+            claimName: arena-replays
+        - name: arena-maps
+          persistentVolumeClaim:
+            claimName: arena-maps
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arena-api
+  namespace: arena
+spec:
+  selector:
+    app: arena-api
+  ports:
+    - port: 9090
+      targetPort: 9090

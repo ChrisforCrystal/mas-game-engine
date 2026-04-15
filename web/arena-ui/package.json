@@ -1,0 +1,23 @@
+{
+  "name": "arena-ui",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "NEXT_DIST_DIR=.next-dev next dev",
+    "build": "NEXT_DIST_DIR=.next-prod next build",
+    "start": "NEXT_DIST_DIR=.next-prod next start",
+    "clean": "rm -rf .next .next-dev .next-prod",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "15.2.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.9",
+    "@types/react": "19.0.10",
+    "@types/react-dom": "19.0.4",
+    "typescript": "5.8.2"
+  }
+}

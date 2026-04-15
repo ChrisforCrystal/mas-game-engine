@@ -1,0 +1,14 @@
+# 单独构建 http-match 二进制，供 arena-api 使用
+FROM rust:1.91-slim AS builder
+
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates/ crates/
+COPY apps/ apps/
+
+RUN cargo build -p http-match --release
+
+FROM scratch
+COPY --from=builder /build/target/release/http-match /http-match

@@ -1,0 +1,6 @@
+/target
+/artifacts/replays
+/web/arena-ui/node_modules
+/web/arena-ui/.next
+/web/arena-ui/.next-dev
+/web/arena-ui/.next-prod

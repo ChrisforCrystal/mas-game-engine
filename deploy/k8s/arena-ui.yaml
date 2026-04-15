@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arena-ui
+  namespace: arena
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arena-ui
+  template:
+    metadata:
+      labels:
+        app: arena-ui
+    spec:
+      containers:
+        - name: arena-ui
+          image: your-registry/arena-ui:latest    # 替换成你的镜像
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_ARENA_API
+              valueFrom:
+                configMapKeyRef:
+                  name: arena-config
+                  key: NEXT_PUBLIC_ARENA_API
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arena-ui
+  namespace: arena
+spec:
+  selector:
+    app: arena-ui
+  ports:
+    - port: 3000
+      targetPort: 3000
