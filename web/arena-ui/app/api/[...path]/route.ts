@@ -22,14 +22,19 @@ function jsonHeaders(upstream: Response) {
 function unavailableResponse(method: string, path: string[]) {
   const [collection] = path;
 
-  if (method === "GET" && path.length === 1 && READ_ONLY_COLLECTIONS.has(collection)) {
+  if (
+    method === "GET" &&
+    path.length === 1 &&
+    READ_ONLY_COLLECTIONS.has(collection)
+  ) {
     return NextResponse.json([]);
   }
 
   return NextResponse.json(
     {
       error: "Arena API is not configured",
-      detail: "Set ARENA_API_URL to the arena-api service address, for example http://arena-api:9090.",
+      detail:
+        "Set ARENA_API_URL to the arena-api service address, for example http://arena-api:9090.",
     },
     { status: 503 },
   );
@@ -57,7 +62,10 @@ async function proxy(request: NextRequest, context: RouteContext) {
     const upstream = await fetch(target, {
       method: request.method,
       headers,
-      body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),
+      body:
+        request.method === "GET" || request.method === "HEAD"
+          ? undefined
+          : await request.text(),
       cache: "no-store",
       signal: AbortSignal.timeout(1000),
     });
