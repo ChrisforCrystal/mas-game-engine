@@ -1,0 +1,17 @@
+# Only the replay UI and replay JSON artifacts are needed for this image.
+*
+!web/
+!web/arena-ui/
+!web/arena-ui/**
+!artifacts/
+!artifacts/replays/
+!artifacts/replays/**
+
+.git
+target
+node_modules
+**/node_modules
+**/.next
+**/.next-dev
+**/.next-prod
+**/tsconfig.tsbuildinfo

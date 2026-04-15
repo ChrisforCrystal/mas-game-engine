@@ -4,6 +4,79 @@
 
 ---
 
+## 部署回放 UI 镜像（Linux AMD64）
+
+如果你在 Apple Silicon 机器上构建镜像，但运行平台是 **Linux AMD64**，一定要显式指定平台：
+
+```bash
+cd /Users/jiwn2/dev/masallsome/mascompelete
+
+# 第一次使用 buildx 时先确保 builder 可用
+docker buildx create --use --name arena-builder 2>/dev/null || docker buildx use arena-builder
+
+# 构建 Linux AMD64 镜像
+docker buildx build \
+  --platform linux/amd64 \
+  -f Dockerfile.arena-ui \
+  -t agent-arena-ui:amd64 \
+  --load \
+  .
+```
+
+本地验证：
+
+```bash
+docker run --rm -p 3000:3000 agent-arena-ui:amd64
+```
+
+打开：
+
+```text
+http://localhost:3000
+```
+
+如果要推送到你的镜像仓库，把 tag 换成仓库地址：
+
+```bash
+REGISTRY_IMAGE=你的镜像仓库地址/agent-arena-ui:版本号
+
+docker buildx build \
+  --platform linux/amd64 \
+  -f Dockerfile.arena-ui \
+  -t "$REGISTRY_IMAGE" \
+  --push \
+  .
+```
+
+平台创建工作负载时建议：
+
+| 配置 | 建议值 |
+|------|--------|
+| 架构 | `linux/amd64` |
+| 容器端口 | `3000` |
+| CPU | `1 Core` 起步 |
+| 内存 | `1024 MiB` 起步，回放多时可用 `2048 MiB` |
+| 镜像拉取策略 | `IfNotPresent` 或平台默认 |
+| 健康检查 | HTTP `GET /` |
+
+这个镜像会把当前仓库里的 `artifacts/replays/*.json` 一起打进去。页面运行时会从容器内的 `/app/artifacts/replays` 读取回放文件。
+
+### API 服务连接
+
+UI 容器只负责页面和回放展示，排行榜、Bot 注册、发起比赛这些接口需要连接 `arena-api` 服务。
+
+如果你的平台里还没有部署 `arena-api`，页面会自动降级为空列表，不会再因为 `127.0.0.1:9090` 报错；但注册 Bot、发起比赛会提示 API 不可用。
+
+如果已经部署了 `arena-api`，需要在 UI 工作负载里配置环境变量：
+
+```text
+ARENA_API_URL=http://你的-arena-api-服务名:9090
+```
+
+注意：不要在容器平台里写 `http://localhost:9090`。在容器内部，`localhost` 指的是 UI 容器自己，不是 API 容器。
+
+---
+
 ## 怎么参赛
 
 你只需要做两件事：

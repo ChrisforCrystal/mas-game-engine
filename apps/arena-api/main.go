@@ -34,6 +34,8 @@ func main() {
 	mux.HandleFunc("POST /matches", handleStartMatch)
 	mux.HandleFunc("GET /matches", handleListMatches)
 	mux.HandleFunc("GET /matches/{id}", handleGetMatch)
+	mux.HandleFunc("DELETE /matches/{id}", handleDeleteMatch)
+	mux.HandleFunc("DELETE /matches", handleClearMatches)
 	mux.HandleFunc("GET /rankings", handleRankings)
 	mux.HandleFunc("GET /maps", handleListMaps)
 
@@ -363,6 +365,39 @@ func handleGetMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, m)
+}
+
+// ── DELETE /matches/{id} ─────────────────────────────────────────────────────
+
+func handleDeleteMatch(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, 400, "invalid id")
+		return
+	}
+	res, err := db.Exec(`DELETE FROM matches WHERE id = ?`, id)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		writeErr(w, 404, "match not found")
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "deleted"})
+}
+
+// ── DELETE /matches (clear all) ─────────────────────────────────────────────
+
+func handleClearMatches(w http.ResponseWriter, r *http.Request) {
+	res, err := db.Exec(`DELETE FROM matches`)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	n, _ := res.RowsAffected()
+	writeJSON(w, 200, map[string]any{"status": "cleared", "deleted": n})
 }
 
 // ── GET /maps ─────────────────────────────────────────────────────────────────

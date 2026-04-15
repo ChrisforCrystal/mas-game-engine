@@ -1,7 +1,6 @@
 target/
 .git/
 web/
-apps/arena-api/
 docs/
 artifacts/
 *.db

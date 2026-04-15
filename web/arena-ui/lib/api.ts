@@ -1,4 +1,4 @@
-const API = process.env.NEXT_PUBLIC_ARENA_API ?? "http://localhost:9090";
+const API = "/api";
 
 export type Bot = {
   id: number;
@@ -75,6 +75,18 @@ export async function registerBot(name: string, url: string, owner: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, url, owner }),
   });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteMatch(id: number) {
+  const res = await fetch(`${API}/matches/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function clearMatches() {
+  const res = await fetch(`${API}/matches`, { method: "DELETE" });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

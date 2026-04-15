@@ -1,5 +1,5 @@
 # ── Build Rust http-match ─────────────────────────────────────────────────────
-FROM rust:1.76-slim AS rust-builder
+FROM rust:1.91-slim AS rust-builder
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
@@ -11,7 +11,7 @@ COPY apps/ apps/
 RUN cargo build -p http-match --release
 
 # ── Build Go arena-api ────────────────────────────────────────────────────────
-FROM golang:1.22-alpine AS go-builder
+FROM golang:1.25-alpine AS go-builder
 
 RUN apk add --no-cache gcc musl-dev
 

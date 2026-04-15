@@ -1,0 +1,41 @@
+# syntax=docker/dockerfile:1
+
+# Build the Next.js replay UI from the repository root so the image can also
+# include replay artifacts at /app/artifacts/replays.
+FROM --platform=$TARGETPLATFORM node:20-alpine AS builder
+
+WORKDIR /app/web/arena-ui
+
+COPY web/arena-ui/package.json web/arena-ui/package-lock.json ./
+RUN npm ci --include=optional \
+  && node -e "const fs=require('fs'); const ok=fs.existsSync('node_modules/@next/swc-linux-x64-musl')||fs.existsSync('node_modules/@next/swc-linux-x64-gnu'); if(!ok){console.error('Missing linux/amd64 Next.js SWC package in node_modules'); process.exit(1)}"
+
+COPY web/arena-ui/ ./
+
+ARG NEXT_PUBLIC_ARENA_API
+ENV NEXT_PUBLIC_ARENA_API=$NEXT_PUBLIC_ARENA_API
+
+RUN npm run build && npm prune --omit=dev
+
+FROM --platform=$TARGETPLATFORM node:20-alpine AS runner
+
+WORKDIR /app/web/arena-ui
+
+ENV NODE_ENV=production
+ENV NEXT_DIST_DIR=.next-prod
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+ENV ARENA_API_URL=http://arena-api:9090
+
+COPY --from=builder /app/web/arena-ui/package.json ./package.json
+COPY --from=builder /app/web/arena-ui/package-lock.json ./package-lock.json
+COPY --from=builder /app/web/arena-ui/next.config.ts ./next.config.ts
+COPY --from=builder /app/web/arena-ui/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/web/arena-ui/node_modules ./node_modules
+COPY --from=builder /app/web/arena-ui/.next-prod ./.next-prod
+COPY artifacts/replays/ /app/artifacts/replays/
+
+EXPOSE 3000
+
+CMD ["npm", "run", "start"]

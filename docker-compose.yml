@@ -1,0 +1,28 @@
+services:
+  arena-api:
+    build:
+      context: .
+      dockerfile: apps/arena-api/Dockerfile
+    ports:
+      - "9090:9090"
+    volumes:
+      - arena-db:/app/arena.db
+      - arena-replays:/app/artifacts/replays
+      - ./maps:/app/maps
+    restart: unless-stopped
+
+  arena-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.arena-ui
+    environment:
+      - ARENA_API_URL=http://arena-api:9090
+    ports:
+      - "3000:3000"
+    depends_on:
+      - arena-api
+    restart: unless-stopped
+
+volumes:
+  arena-db:
+  arena-replays:
