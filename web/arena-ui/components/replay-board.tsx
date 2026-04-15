@@ -10,12 +10,15 @@ import {
 
 import type { ReplayData, ReplayFrame, RobotState, Tile } from "@/lib/replay";
 
+type MatchInfo = { botA: string; botB: string; id: number };
+
 type ReplayBoardProps = {
   replay: ReplayData;
   seed: string;
   availableSeeds: string[];
   botAName?: string;
   botBName?: string;
+  matchMap?: Record<string, MatchInfo>;
 };
 
 const TILE_SIZE = 22;
@@ -34,7 +37,7 @@ type CabinetStatus = {
   capacity: number;
 };
 
-export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName }: ReplayBoardProps) {
+export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, matchMap = {} }: ReplayBoardProps) {
   const [frameIndex, setFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -171,9 +174,11 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName }
                 onChange={(e) => { window.location.href = `/?seed=${e.target.value}`; }}
                 style={{ background: "rgba(7,18,31,0.9)", border: "1px solid var(--line-strong)", borderRadius: 999, color: "var(--text)", padding: "6px 14px", fontSize: "0.84rem", cursor: "pointer", outline: "none" }}
               >
-                {availableSeeds.map((s) => (
-                  <option key={s} value={s}>seed {s}</option>
-                ))}
+              {availableSeeds.map((s) => {
+                  const info = matchMap[s.split("-")[0]];
+                  const label = info ? `${info.botA} vs ${info.botB} #${info.id}` : `seed ${s}`;
+                  return <option key={s} value={s}>{label}</option>;
+                })}
               </select>
             </div>
           )}

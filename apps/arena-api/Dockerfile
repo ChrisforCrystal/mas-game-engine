@@ -30,6 +30,7 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=go-builder /build/arena-api .
 COPY --from=rust-builder /build/target/release/http-match .
+COPY maps/ ./maps/
 
 # maps/ and artifacts/ are mounted as PVC
 

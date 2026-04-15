@@ -1,6 +1,6 @@
 import { ReplayBoard } from "@/components/replay-board";
 import { loadReplay, listReplays } from "@/lib/replay";
-import { fetchMatches } from "@/lib/api";
+import { fetchMatches, Match } from "@/lib/api";
 
 type Props = { searchParams: Promise<{ seed?: string }> };
 
@@ -23,8 +23,13 @@ export default async function Page({ searchParams }: Props) {
   // find bot names from match history
   let botAName: string | undefined;
   let botBName: string | undefined;
+  let matchMap: Record<string, { botA: string; botB: string; id: number }> = {};
   try {
     const matches = await fetchMatches();
+    for (const m of matches) {
+      const key = String(m.seed);
+      matchMap[key] = { botA: m.bot_a_name, botB: m.bot_b_name, id: m.id };
+    }
     const seedNum = Number(seed.split("-")[0]);
     const match = matches.find((m) => m.seed === seedNum);
     if (match) {
@@ -33,5 +38,5 @@ export default async function Page({ searchParams }: Props) {
     }
   } catch { /* ignore */ }
 
-  return <ReplayBoard replay={replay} seed={seed} availableSeeds={replays} botAName={botAName} botBName={botBName} />;
+  return <ReplayBoard replay={replay} seed={seed} availableSeeds={replays} botAName={botAName} botBName={botBName} matchMap={matchMap} />;
 }

@@ -13,6 +13,8 @@ import {
   registerBot,
   startMatch,
   deleteBot,
+  deleteMatch,
+  clearMatches,
 } from "@/lib/api";
 
 export default function ArenaPage() {
@@ -59,6 +61,15 @@ export default function ArenaPage() {
     } catch (err: any) {
       setRegMsg("失败: " + err.message);
     }
+  }
+
+  async function handleDeleteMatch(id: number) {
+    try { await deleteMatch(id); reload(); } catch (err: any) { alert("删除失败: " + err.message); }
+  }
+
+  async function handleClearMatches() {
+    if (!confirm("确认清空所有比赛记录？")) return;
+    try { await clearMatches(); reload(); } catch (err: any) { alert("清空失败: " + err.message); }
   }
 
   async function handleStartMatch(e: React.FormEvent) {
@@ -145,7 +156,7 @@ export default function ArenaPage() {
               <p className="eyebrow" style={{ marginBottom: 12 }}>最近比赛</p>
               <div style={{ display: "grid", gap: 10 }}>
                 {matches.slice(0, 8).map((m) => (
-                  <MatchRow key={m.id} match={m} />
+                  <MatchRow key={m.id} match={m} onDelete={handleDeleteMatch} />
                 ))}
                 {matches.length === 0 && <p style={{ color: "var(--muted)" }}>暂无比赛记录</p>}
               </div>
@@ -192,9 +203,19 @@ export default function ArenaPage() {
             </form>
 
             <div style={{ marginTop: 32 }}>
-              <p className="eyebrow" style={{ marginBottom: 12 }}>比赛历史</p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <p className="eyebrow" style={{ margin: 0 }}>比赛历史</p>
+                {matches.length > 0 && (
+                  <button
+                    onClick={handleClearMatches}
+                    style={{ background: "none", border: "1px solid var(--danger, #ff4d6a)", borderRadius: 8, color: "var(--danger, #ff4d6a)", fontSize: "0.76rem", padding: "2px 10px", cursor: "pointer" }}
+                  >
+                    清空全部
+                  </button>
+                )}
+              </div>
               <div style={{ display: "grid", gap: 10 }}>
-                {matches.map((m) => <MatchRow key={m.id} match={m} />)}
+                {matches.map((m) => <MatchRow key={m.id} match={m} onDelete={handleDeleteMatch} />)}
                 {matches.length === 0 && <p style={{ color: "var(--muted)" }}>暂无比赛记录</p>}
               </div>
             </div>
@@ -268,7 +289,7 @@ function WinBar({ rate }: { rate: number }) {
   );
 }
 
-function MatchRow({ match: m }: { match: Match }) {
+function MatchRow({ match: m, onDelete }: { match: Match; onDelete: (id: number) => void }) {
   const statusColor = { done: "var(--alpha)", running: "var(--gold)", error: "var(--danger)", pending: "var(--muted)" }[m.status] ?? "var(--muted)";
   const winnerLabel = m.winner === "Alpha" ? m.bot_a_name : m.winner === "Beta" ? m.bot_b_name : m.status === "done" ? "平局" : "";
   const mapLabel = m.map_path ? m.map_path.replace(/^maps\//, "").replace(/\.json$/, "") : null;
@@ -296,6 +317,12 @@ function MatchRow({ match: m }: { match: Match }) {
             回放
           </a>
         )}
+        <button
+          onClick={() => { if (confirm(`确认删除比赛 #${m.id}？`)) onDelete(m.id); }}
+          style={{ background: "none", border: "1px solid var(--danger, #ff4d6a)", borderRadius: 8, color: "var(--danger, #ff4d6a)", fontSize: "0.72rem", padding: "2px 8px", cursor: "pointer" }}
+        >
+          删除
+        </button>
       </div>
     </div>
   );
