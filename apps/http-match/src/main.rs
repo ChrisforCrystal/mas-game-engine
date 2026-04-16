@@ -197,7 +197,8 @@ fn main() {
     bot_b.finish(&summary);
     log(&format!("--- finish done ({:.0}ms) ---", t.elapsed().as_secs_f64() * 1000.0));
 
-    let artifacts_dir = PathBuf::from("artifacts/replays");
+    let base_dir = env::var("ARENA_DATA_DIR").unwrap_or_else(|_| ".".to_string());
+    let artifacts_dir = PathBuf::from(&base_dir).join("artifacts/replays");
     fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
     let replay_path = artifacts_dir.join(format!("{match_id}.json"));
     fs::write(&replay_path, serde_json::to_vec_pretty(&replay).expect("serialize replay"))

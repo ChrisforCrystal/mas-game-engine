@@ -1,0 +1,14 @@
+2026/04/16 16:03:56 data dir: .
+2026/04/16 16:03:56 Arena API listening on :9090
+2026/04/16 16:56:49 [match 73] started: test1(http://10.74.44.39:18080) vs test1(http://10.74.44.39:18080) seed=920000 map=
+2026/04/16 16:56:49 [match 73] launching runner: alpha=http://10.74.44.39:18080 beta=http://10.74.44.39:18080 seed=920000 map=
+2026/04/16 16:56:49 [match 73] runner binary: /Users/jiwn2/dev/masallsome/mascompelete/apps/arena-api/http-match
+2026/04/16 16:56:49 [match 73] working dir: /Users/jiwn2/dev/masallsome/mascompelete
+2026/04/16 16:56:50 [match 73] runner output:
+Initialising bots...
+Starting match  seed=920000  alpha=http://10.74.44.39:18080  beta=http://10.74.44.39:18080
+Notifying bots of result...
+Done  winner=Alpha  alpha=93  beta=0  replay=artifacts/replays/match-920000-1776329809853.json
+2026/04/16 16:56:50 [match 73] DONE in 461.904916ms: winner=Alpha score=93-0 replay=artifacts/replays/match-920000-1776329809853.json
+2026/04/16 17:04:09 data dir: .
+2026/04/16 17:04:09 Arena API listening on :9090

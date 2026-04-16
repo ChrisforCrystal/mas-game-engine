@@ -1,7 +1,7 @@
 # ── Build Rust http-match ─────────────────────────────────────────────────────
-FROM rust:1.91-slim AS rust-builder
+FROM rust:1.91-alpine AS rust-builder
 
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache musl-dev
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
@@ -31,6 +31,7 @@ WORKDIR /app
 COPY --from=go-builder /build/arena-api .
 COPY --from=rust-builder /build/target/release/http-match .
 COPY maps/ ./maps/
+RUN mkdir -p logs artifacts/replays
 
 # maps/ and artifacts/ are mounted as PVC
 

@@ -18,10 +18,19 @@ import (
 )
 
 var db *sql.DB
+var dataDir string
 
 func main() {
+	// ARENA_DATA_DIR controls where all persistent data goes
+	// container: set to /app/nas, local: defaults to "."
+	dataDir = os.Getenv("ARENA_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "."
+	}
+	os.MkdirAll(dataDir, 0755)
+
 	// setup log directory and file
-	logDir := "logs"
+	logDir := filepath.Join(dataDir, "logs")
 	if d := os.Getenv("ARENA_LOG_DIR"); d != "" {
 		logDir = d
 	}
@@ -33,8 +42,11 @@ func main() {
 	defer logFile.Close()
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
+	log.Printf("data dir: %s", dataDir)
+
+	dbPath := filepath.Join(dataDir, "arena.db")
 	var dbErr error
-	db, dbErr = sql.Open("sqlite3", "./arena.db")
+	db, dbErr = sql.Open("sqlite3", dbPath)
 	if dbErr != nil {
 		log.Fatal(dbErr)
 	}
@@ -52,6 +64,8 @@ func main() {
 	mux.HandleFunc("DELETE /matches", handleClearMatches)
 	mux.HandleFunc("GET /rankings", handleRankings)
 	mux.HandleFunc("GET /maps", handleListMaps)
+	mux.HandleFunc("GET /replays", handleListReplays)
+	mux.HandleFunc("GET /replays/{name}", handleGetReplay)
 
 	port := "9090"
 	log.Printf("Arena API listening on :%s", port)
@@ -301,6 +315,7 @@ func runMatch(matchID int64, botAURL, botBURL string, seed int64, mapPath string
 		args = append(args, "--map", mapPath)
 	}
 	cmd := exec.Command(runnerPath, args...)
+	cmd.Env = append(os.Environ(), "ARENA_DATA_DIR="+dataDir)
 	// set working dir to project root (where maps/ lives)
 	if d := mapsDir(); d != "maps" {
 		cmd.Dir = filepath.Dir(d)
@@ -556,4 +571,70 @@ func handleRankings(w http.ResponseWriter, r *http.Request) {
 		rankings = append(rankings, rk)
 	}
 	writeJSON(w, 200, rankings)
+}
+
+// ── GET /replays ─────────────────────────────────────────────────────────────
+
+func replaysDir() string {
+	return filepath.Join(dataDir, "artifacts", "replays")
+}
+
+func handleListReplays(w http.ResponseWriter, r *http.Request) {
+	dir := replaysDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		writeJSON(w, 200, []string{})
+		return
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			names = append(names, e.Name())
+		}
+	}
+	writeJSON(w, 200, names)
+}
+
+// ── GET /replays/{name} ──────────────────────────────────────────────────────
+
+func handleGetReplay(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	// security: prevent path traversal
+	if strings.Contains(name, "/") || strings.Contains(name, "..") {
+		writeErr(w, 400, "invalid name")
+		return
+	}
+
+	dir := replaysDir()
+	// if name is just a seed number, find matching file
+	if !strings.HasSuffix(name, ".json") {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			writeErr(w, 404, "replay not found")
+			return
+		}
+		prefix := "match-" + name
+		var found string
+		for i := len(entries) - 1; i >= 0; i-- {
+			e := entries[i]
+			if strings.HasPrefix(e.Name(), prefix) && strings.HasSuffix(e.Name(), ".json") {
+				found = e.Name()
+				break
+			}
+		}
+		if found == "" {
+			writeErr(w, 404, "replay not found for seed "+name)
+			return
+		}
+		name = found
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		writeErr(w, 404, "replay not found")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	w.Write(data)
 }
