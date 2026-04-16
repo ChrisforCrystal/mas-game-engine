@@ -2,10 +2,10 @@ import { ReplayBoard } from "@/components/replay-board";
 import { loadReplay, listReplays } from "@/lib/replay";
 import { fetchMatches, Match } from "@/lib/api";
 
-type Props = { searchParams: Promise<{ seed?: string }> };
+type Props = { searchParams: Promise<{ seed?: string; botA?: string; botB?: string; page?: string }> };
 
 export default async function Page({ searchParams }: Props) {
-  const { seed } = await searchParams;
+  const { seed, botA, botB, page } = await searchParams;
   const replays = await listReplays();
 
   // no seed specified: show replay picker
@@ -16,6 +16,20 @@ export default async function Page({ searchParams }: Props) {
     for (const m of matches) {
       matchMap[String(m.seed)] = { botA: m.bot_a_name, botB: m.bot_b_name, id: m.id };
     }
+
+    // deduplicate by seed (keep latest replay per seed)
+    const seen = new Set<string>();
+    const uniqueReplays = replays.filter((r) => {
+      const seedNum = r.split("-")[0];
+      if (seen.has(seedNum)) return false;
+      seen.add(seedNum);
+      return true;
+    });
+
+    const PAGE_SIZE = 10;
+    const currentPage = Math.max(0, parseInt(page || "0", 10) || 0);
+    const totalPages = Math.ceil(uniqueReplays.length / PAGE_SIZE);
+    const pagedReplays = uniqueReplays.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
     return (
       <div className="shell">
@@ -31,37 +45,57 @@ export default async function Page({ searchParams }: Props) {
               排行榜
             </a>
           </div>
-          {replays.length === 0 ? (
+          {uniqueReplays.length === 0 ? (
             <p style={{ color: "var(--muted)", textAlign: "center", padding: 40 }}>暂无回放记录，先发起一场比赛</p>
           ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {replays.map((r) => {
-                const seedNum = r.split("-")[0];
-                const info = matchMap[seedNum];
-                return (
-                  <a
-                    key={r}
-                    href={`/?seed=${seedNum}`}
-                    className="event-card"
-                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", textDecoration: "none", color: "inherit" }}
-                  >
-                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                      {info ? (
-                        <>
-                          <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>#{info.id}</span>
-                          <span style={{ color: "var(--alpha)" }}>{info.botA}</span>
-                          <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>vs</span>
-                          <span style={{ color: "var(--beta)" }}>{info.botB}</span>
-                        </>
-                      ) : (
-                        <span>回放 {r}</span>
-                      )}
-                    </div>
-                    <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>seed={seedNum}</span>
-                  </a>
-                );
-              })}
-            </div>
+            <>
+              <div style={{ display: "grid", gap: 10 }}>
+                {pagedReplays.map((r) => {
+                  const seedNum = r.split("-")[0];
+                  const info = matchMap[seedNum];
+                  const href = info
+                    ? `/?seed=${seedNum}&botA=${encodeURIComponent(info.botA)}&botB=${encodeURIComponent(info.botB)}`
+                    : `/?seed=${seedNum}`;
+                  return (
+                    <a
+                      key={r}
+                      href={href}
+                      className="event-card"
+                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", textDecoration: "none", color: "inherit" }}
+                    >
+                      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                        {info ? (
+                          <>
+                            <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>#{info.id}</span>
+                            <span style={{ color: "var(--alpha)" }}>{info.botA}</span>
+                            <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>vs</span>
+                            <span style={{ color: "var(--beta)" }}>{info.botB}</span>
+                          </>
+                        ) : (
+                          <span style={{ color: "var(--muted)" }}>seed={seedNum}</span>
+                        )}
+                      </div>
+                      <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>seed={seedNum}</span>
+                    </a>
+                  );
+                })}
+              </div>
+              {totalPages > 1 && (
+                <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 16 }}>
+                  {currentPage > 0 ? (
+                    <a href={`/?page=${currentPage - 1}`} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", textDecoration: "none" }}>上一页</a>
+                  ) : (
+                    <span style={{ border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--muted)", fontSize: "0.8rem", padding: "4px 14px", opacity: 0.4 }}>上一页</span>
+                  )}
+                  <span style={{ color: "var(--muted)", fontSize: "0.8rem", lineHeight: "28px" }}>{currentPage + 1} / {totalPages}</span>
+                  {(currentPage + 1) < totalPages ? (
+                    <a href={`/?page=${currentPage + 1}`} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", textDecoration: "none" }}>下一页</a>
+                  ) : (
+                    <span style={{ border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--muted)", fontSize: "0.8rem", padding: "4px 14px", opacity: 0.4 }}>下一页</span>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -80,9 +114,9 @@ export default async function Page({ searchParams }: Props) {
     );
   }
 
-  // find bot names from match history
-  let botAName: string | undefined;
-  let botBName: string | undefined;
+  // bot names: prefer URL params, fallback to match history
+  let botAName: string | undefined = botA;
+  let botBName: string | undefined = botB;
   let matchMap: Record<string, { botA: string; botB: string; id: number }> = {};
   try {
     const matches = await fetchMatches();
@@ -90,11 +124,13 @@ export default async function Page({ searchParams }: Props) {
       const key = String(m.seed);
       matchMap[key] = { botA: m.bot_a_name, botB: m.bot_b_name, id: m.id };
     }
-    const seedNum = Number(seed.split("-")[0]);
-    const match = matches.find((m) => m.seed === seedNum);
-    if (match) {
-      botAName = match.bot_a_name;
-      botBName = match.bot_b_name;
+    if (!botAName || !botBName) {
+      const seedNum = Number(seed.split("-")[0]);
+      const match = matches.find((m) => m.seed === seedNum);
+      if (match) {
+        botAName = botAName || match.bot_a_name;
+        botBName = botBName || match.bot_b_name;
+      }
     }
   } catch { /* ignore */ }
 

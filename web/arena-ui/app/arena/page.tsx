@@ -23,6 +23,14 @@ export default function ArenaPage() {
   const [rankings, setRankings] = useState<Ranking[]>([]);
   const [maps, setMaps] = useState<MapInfo[]>([]);
   const [tab, setTab] = useState<"rank" | "match" | "bots">("rank");
+  const [matchPage, setMatchPage] = useState(0);
+  const MATCH_PAGE_SIZE = 8;
+  const [adminToken, setAdminToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setAdminToken(params.get("token"));
+  }, []);
 
   // register bot form
   const [regName, setRegName] = useState("");
@@ -36,6 +44,11 @@ export default function ArenaPage() {
   const [matchSeed, setMatchSeed] = useState("");
   const [matchMap, setMatchMap] = useState("");
   const [matchMsg, setMatchMsg] = useState("");
+
+  // live progress for just-started match
+  const [liveMatchId, setLiveMatchId] = useState<number | null>(null);
+  const [liveProgress, setLiveProgress] = useState<{ turn: number; total: number; score_a: number; score_b: number } | null>(null);
+  const [liveDone, setLiveDone] = useState(false);
 
   async function reload() {
     const [b, m, r, mp] = await Promise.all([fetchBots(), fetchMatches(), fetchRankings(), fetchMaps()]);
@@ -64,13 +77,33 @@ export default function ArenaPage() {
   }
 
   async function handleDeleteMatch(id: number) {
-    try { await deleteMatch(id); reload(); } catch (err: any) { alert("删除失败: " + err.message); }
+    try { await deleteMatch(id, adminToken || undefined); reload(); } catch (err: any) { alert("删除失败: " + err.message); }
   }
 
   async function handleClearMatches() {
     if (!confirm("确认清空所有比赛记录？")) return;
-    try { await clearMatches(); reload(); } catch (err: any) { alert("清空失败: " + err.message); }
+    try { await clearMatches(adminToken || undefined); reload(); } catch (err: any) { alert("清空失败: " + err.message); }
   }
+
+  // connect SSE immediately after match starts
+  useEffect(() => {
+    if (!liveMatchId) return;
+    const es = new EventSource(`/api/matches/${liveMatchId}/live`);
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.done) {
+          setLiveDone(true);
+          es.close();
+          reload();
+          return;
+        }
+        setLiveProgress(data);
+      } catch {}
+    };
+    es.onerror = () => { es.close(); };
+    return () => es.close();
+  }, [liveMatchId]);
 
   async function handleStartMatch(e: React.FormEvent) {
     e.preventDefault();
@@ -78,8 +111,11 @@ export default function ArenaPage() {
     const b = bots.find((b) => b.name === matchB);
     if (!a || !b) { setMatchMsg("找不到 bot"); return; }
     try {
+      setLiveProgress(null);
+      setLiveDone(false);
       const res = await startMatch(a.id, b.id, matchSeed ? parseInt(matchSeed) : undefined, matchMap || undefined);
       setMatchMsg(`比赛已发起 #${res.id}，seed=${res.seed}`);
+      setLiveMatchId(res.id); // triggers SSE connection immediately
       reload();
     } catch (err: any) {
       setMatchMsg("失败: " + err.message);
@@ -155,11 +191,32 @@ export default function ArenaPage() {
             <div style={{ marginTop: 28 }}>
               <p className="eyebrow" style={{ marginBottom: 12 }}>最近比赛</p>
               <div style={{ display: "grid", gap: 10 }}>
-                {matches.slice(0, 8).map((m) => (
-                  <MatchRow key={m.id} match={m} onDelete={handleDeleteMatch} />
+                {matches.slice(matchPage * MATCH_PAGE_SIZE, (matchPage + 1) * MATCH_PAGE_SIZE).map((m) => (
+                  <MatchRow key={m.id} match={m} onDelete={handleDeleteMatch} isAdmin={!!adminToken} />
                 ))}
                 {matches.length === 0 && <p style={{ color: "var(--muted)" }}>暂无比赛记录</p>}
               </div>
+              {matches.length > MATCH_PAGE_SIZE && (
+                <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 14 }}>
+                  <button
+                    disabled={matchPage === 0}
+                    onClick={() => setMatchPage(p => p - 1)}
+                    style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: matchPage === 0 ? "var(--muted)" : "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", cursor: matchPage === 0 ? "default" : "pointer", opacity: matchPage === 0 ? 0.4 : 1 }}
+                  >
+                    上一页
+                  </button>
+                  <span style={{ color: "var(--muted)", fontSize: "0.8rem", lineHeight: "28px" }}>
+                    {matchPage + 1} / {Math.ceil(matches.length / MATCH_PAGE_SIZE)}
+                  </span>
+                  <button
+                    disabled={(matchPage + 1) * MATCH_PAGE_SIZE >= matches.length}
+                    onClick={() => setMatchPage(p => p + 1)}
+                    style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: (matchPage + 1) * MATCH_PAGE_SIZE >= matches.length ? "var(--muted)" : "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", cursor: (matchPage + 1) * MATCH_PAGE_SIZE >= matches.length ? "default" : "pointer", opacity: (matchPage + 1) * MATCH_PAGE_SIZE >= matches.length ? 0.4 : 1 }}
+                  >
+                    下一页
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -202,10 +259,56 @@ export default function ArenaPage() {
               {matchMsg && <p style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{matchMsg}</p>}
             </form>
 
+            {/* live progress panel — shown immediately after starting a match */}
+            {liveMatchId && !liveDone && (
+              <div className="event-card" style={{ marginTop: 20, padding: "16px 20px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ color: "var(--gold)", fontSize: "0.82rem", fontWeight: 600 }}>
+                      比赛 #{liveMatchId} 进行中
+                    </span>
+                    <span style={{ color: "var(--alpha)" }}>{matchA}</span>
+                    <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>vs</span>
+                    <span style={{ color: "var(--beta)" }}>{matchB}</span>
+                    {liveProgress && (
+                      <span style={{ color: "var(--gold)", fontSize: "0.88rem", fontWeight: 600 }}>
+                        {liveProgress.score_a} : {liveProgress.score_b}
+                      </span>
+                    )}
+                  </div>
+                  {liveProgress && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ width: 120, height: 6, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                        <div style={{ width: `${(liveProgress.turn / liveProgress.total) * 100}%`, height: "100%", background: "var(--gold)", borderRadius: "inherit", transition: "width 0.15s" }} />
+                      </div>
+                      <span style={{ fontSize: "0.76rem", color: "var(--gold)" }}>{liveProgress.turn}/{liveProgress.total}</span>
+                    </div>
+                  )}
+                  {!liveProgress && (
+                    <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>等待连接...</span>
+                  )}
+                </div>
+              </div>
+            )}
+            {liveMatchId && liveDone && (
+              <div className="event-card" style={{ marginTop: 20, padding: "16px 20px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ color: "var(--alpha)", fontSize: "0.82rem", fontWeight: 600 }}>
+                    比赛 #{liveMatchId} 已完成
+                  </span>
+                  {liveProgress && (
+                    <span style={{ fontSize: "0.88rem" }}>
+                      最终比分 {liveProgress.score_a} : {liveProgress.score_b}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div style={{ marginTop: 32 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                 <p className="eyebrow" style={{ margin: 0 }}>比赛历史</p>
-                {matches.length > 0 && (
+                {matches.length > 0 && adminToken && (
                   <button
                     onClick={handleClearMatches}
                     style={{ background: "none", border: "1px solid var(--danger, #ff4d6a)", borderRadius: 8, color: "var(--danger, #ff4d6a)", fontSize: "0.76rem", padding: "2px 10px", cursor: "pointer" }}
@@ -256,15 +359,17 @@ export default function ArenaPage() {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>#{b.id}</span>
-                      <button
-                        onClick={async () => {
-                          if (!confirm(`确认删除 ${b.name}？`)) return;
-                          try { await deleteBot(b.id); reload(); } catch (err: any) { alert("删除失败: " + err.message); }
-                        }}
-                        style={{ background: "none", border: "1px solid var(--danger, #ff4d6a)", borderRadius: 8, color: "var(--danger, #ff4d6a)", fontSize: "0.76rem", padding: "2px 10px", cursor: "pointer" }}
-                      >
-                        删除
-                      </button>
+                      {adminToken && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`确认删除 ${b.name}？`)) return;
+                            try { await deleteBot(b.id, adminToken || undefined); reload(); } catch (err: any) { alert("删除失败: " + err.message); }
+                          }}
+                          style={{ background: "none", border: "1px solid var(--danger, #ff4d6a)", borderRadius: 8, color: "var(--danger, #ff4d6a)", fontSize: "0.76rem", padding: "2px 10px", cursor: "pointer" }}
+                        >
+                          删除
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -289,40 +394,87 @@ function WinBar({ rate }: { rate: number }) {
   );
 }
 
-function MatchRow({ match: m, onDelete }: { match: Match; onDelete: (id: number) => void }) {
+function MatchRow({ match: m, onDelete, isAdmin }: { match: Match; onDelete: (id: number) => void; isAdmin: boolean }) {
+  const [elapsed, setElapsed] = useState("");
+  const [progress, setProgress] = useState<{ turn: number; total: number; score_a: number; score_b: number } | null>(null);
+
+  useEffect(() => {
+    if (m.status !== "running") return;
+    const start = new Date(m.started_at).getTime();
+    const tick = () => {
+      const s = Math.floor((Date.now() - start) / 1000);
+      setElapsed(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [m.status, m.started_at]);
+
+  useEffect(() => {
+    if (m.status !== "running") return;
+    const es = new EventSource(`/api/matches/${m.id}/live`);
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.done) { es.close(); return; }
+        setProgress(data);
+      } catch {}
+    };
+    es.onerror = () => { es.close(); };
+    return () => es.close();
+  }, [m.status, m.id]);
+
   const statusColor = { done: "var(--alpha)", running: "var(--gold)", error: "var(--danger)", pending: "var(--muted)" }[m.status] ?? "var(--muted)";
   const winnerLabel = m.winner === "Alpha" ? m.bot_a_name : m.winner === "Beta" ? m.bot_b_name : m.status === "done" ? "平局" : "";
   const mapLabel = m.map_path ? m.map_path.replace(/^maps\//, "").replace(/\.json$/, "") : null;
+  const latColor = (ms: number | null | undefined) => !ms ? "var(--muted)" : ms < 50 ? "var(--alpha)" : ms < 150 ? "var(--gold)" : "var(--danger)";
   return (
     <div className="event-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         <span style={{ color: "var(--muted)", fontSize: "0.76rem", minWidth: 28 }}>#{m.id}</span>
         <span style={{ color: "var(--alpha)" }}>{m.bot_a_name}</span>
+        {m.latency_a != null && <span style={{ fontSize: "0.64rem", color: latColor(m.latency_a) }}>{m.latency_a}ms</span>}
         <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>vs</span>
         <span style={{ color: "var(--beta)" }}>{m.bot_b_name}</span>
-        {m.score_a != null && (
+        {m.latency_b != null && <span style={{ fontSize: "0.64rem", color: latColor(m.latency_b) }}>{m.latency_b}ms</span>}
+        {m.score_a != null && !progress && (
           <span style={{ color: "var(--muted)", fontSize: "0.82rem" }}>{m.score_a} : {m.score_b}</span>
+        )}
+        {progress && (
+          <span style={{ color: "var(--gold)", fontSize: "0.82rem" }}>{progress.score_a} : {progress.score_b}</span>
         )}
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         {mapLabel && <span style={{ fontSize: "0.72rem", color: "var(--muted)", opacity: 0.7 }}>{mapLabel}</span>}
         {winnerLabel && <span style={{ fontSize: "0.8rem", color: "var(--gold)" }}>胜: {winnerLabel}</span>}
-        <span style={{ fontSize: "0.76rem", color: statusColor, textTransform: "uppercase", letterSpacing: "0.1em" }}>{m.status}</span>
+        {progress && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 60, height: 4, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+              <div style={{ width: `${(progress.turn / progress.total) * 100}%`, height: "100%", background: "var(--gold)", borderRadius: "inherit", transition: "width 0.3s" }} />
+            </div>
+            <span style={{ fontSize: "0.68rem", color: "var(--gold)" }}>{progress.turn}/{progress.total}</span>
+          </div>
+        )}
+        <span style={{ fontSize: "0.76rem", color: statusColor, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+          {m.status}{m.status === "running" && elapsed ? ` ${elapsed}` : ""}
+        </span>
         <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>seed={m.seed}</span>
         {m.status === "done" && (
           <a
-            href={`/?seed=${m.seed}`}
+            href={`/?seed=${m.seed}&botA=${encodeURIComponent(m.bot_a_name)}&botB=${encodeURIComponent(m.bot_b_name)}`}
             style={{ fontSize: "0.76rem", color: "var(--alpha)", textDecoration: "none", border: "1px solid var(--alpha)", borderRadius: 999, padding: "2px 10px" }}
           >
             回放
           </a>
         )}
-        <button
-          onClick={() => { if (confirm(`确认删除比赛 #${m.id}？`)) onDelete(m.id); }}
-          style={{ background: "none", border: "1px solid var(--danger, #ff4d6a)", borderRadius: 8, color: "var(--danger, #ff4d6a)", fontSize: "0.72rem", padding: "2px 8px", cursor: "pointer" }}
-        >
-          删除
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => { if (confirm(`确认删除比赛 #${m.id}？`)) onDelete(m.id); }}
+            style={{ background: "none", border: "1px solid var(--danger, #ff4d6a)", borderRadius: 8, color: "var(--danger, #ff4d6a)", fontSize: "0.72rem", padding: "2px 8px", cursor: "pointer" }}
+          >
+            删除
+          </button>
+        )}
       </div>
     </div>
   );

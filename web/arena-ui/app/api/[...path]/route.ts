@@ -58,6 +58,10 @@ async function proxy(request: NextRequest, context: RouteContext) {
   if (contentType) headers.set("content-type", contentType);
   if (accept) headers.set("accept", accept);
 
+  // SSE endpoints (e.g. /matches/123/live) need long timeout and streaming headers
+  const isSSE = path.length >= 3 && path[path.length - 1] === "live";
+  const timeout = isSSE ? 600000 : 200;
+
   try {
     const upstream = await fetch(target, {
       method: request.method,
@@ -67,13 +71,21 @@ async function proxy(request: NextRequest, context: RouteContext) {
           ? undefined
           : await request.text(),
       cache: "no-store",
-      signal: AbortSignal.timeout(1000),
+      signal: AbortSignal.timeout(timeout),
     });
+
+    const responseHeaders = isSSE
+      ? new Headers({
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        })
+      : jsonHeaders(upstream);
 
     return new NextResponse(upstream.body, {
       status: upstream.status,
       statusText: upstream.statusText,
-      headers: jsonHeaders(upstream),
+      headers: responseHeaders,
     });
   } catch {
     return unavailableResponse(request.method, path);

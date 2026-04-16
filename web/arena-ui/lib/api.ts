@@ -1,4 +1,12 @@
-const API = "/api";
+function getApiBase() {
+  // SSR: use absolute URL; browser: use relative path
+  if (typeof window === "undefined") {
+    return `http://localhost:${process.env.PORT || 3000}/api`;
+  }
+  return "/api";
+}
+
+const API = getApiBase();
 
 export type Bot = {
   id: number;
@@ -21,6 +29,8 @@ export type Match = {
   score_a: number | null;
   score_b: number | null;
   replay_path: string | null;
+  latency_a: number | null;
+  latency_b: number | null;
   started_at: string;
   finished_at: string | null;
 };
@@ -63,8 +73,9 @@ export async function fetchRankings(): Promise<Ranking[]> {
   return res.json();
 }
 
-export async function deleteBot(id: number) {
-  const res = await fetch(`${API}/bots/${id}`, { method: "DELETE" });
+export async function deleteBot(id: number, token?: string) {
+  const q = token ? `?token=${encodeURIComponent(token)}` : "";
+  const res = await fetch(`${API}/bots/${id}${q}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -79,14 +90,16 @@ export async function registerBot(name: string, url: string, owner: string) {
   return res.json();
 }
 
-export async function deleteMatch(id: number) {
-  const res = await fetch(`${API}/matches/${id}`, { method: "DELETE" });
+export async function deleteMatch(id: number, token?: string) {
+  const q = token ? `?token=${encodeURIComponent(token)}` : "";
+  const res = await fetch(`${API}/matches/${id}${q}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
-export async function clearMatches() {
-  const res = await fetch(`${API}/matches`, { method: "DELETE" });
+export async function clearMatches(token?: string) {
+  const q = token ? `?token=${encodeURIComponent(token)}` : "";
+  const res = await fetch(`${API}/matches${q}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

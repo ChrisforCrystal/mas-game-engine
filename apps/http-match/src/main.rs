@@ -1,8 +1,9 @@
 use std::{env, fs, io::Write as _, path::PathBuf, sync::Mutex, time::{Duration, Instant}};
+use std::io;
 
 use engine_core::{
     ActRequest, ActResponse, BotStrategy, GameConfig, GameState, InitRequest,
-    RobotAction, Team, run_match,
+    RobotAction, Team,
     state::MatchSummary,
 };
 
@@ -36,15 +37,20 @@ struct HttpBot {
     match_id: String,
     team: Team,
     timeout_ms: u64,
+    agent: ureq::Agent,
 }
 
 impl HttpBot {
     fn new(base_url: &str, match_id: &str, team: Team) -> Self {
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_millis(250)) // 200ms bot timeout + 50ms buffer
+            .build();
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             match_id: match_id.to_string(),
             team,
             timeout_ms: 200,
+            agent,
         }
     }
 
@@ -53,11 +59,29 @@ impl HttpBot {
         path: &str,
         body: &T,
     ) -> Result<R, String> {
+        self.do_post(path, body, &self.agent)
+    }
+
+    fn post_with_timeout<T: serde::Serialize, R: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &T,
+        timeout_ms: u64,
+    ) -> Result<R, String> {
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_millis(timeout_ms))
+            .build();
+        self.do_post(path, body, &agent)
+    }
+
+    fn do_post<T: serde::Serialize, R: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &T,
+        agent: &ureq::Agent,
+    ) -> Result<R, String> {
         let url = format!("{}{}", self.base_url, path);
         let t = Instant::now();
-        let agent = ureq::AgentBuilder::new()
-            .timeout(Duration::from_millis(self.timeout_ms + 50)) // slight buffer over game timeout
-            .build();
         let result = agent
             .post(&url)
             .set("Content-Type", "application/json")
@@ -66,16 +90,19 @@ impl HttpBot {
             .into_json::<R>()
             .map_err(|e| format!("deserialize {path} response failed: {e}"));
         let elapsed = t.elapsed();
-        match &result {
-            Ok(_) => log(&format!("[{:?}] POST {} OK ({:.1}ms)", self.team, path, elapsed.as_secs_f64() * 1000.0)),
-            Err(e) => log(&format!("[{:?}] POST {} FAIL ({:.1}ms): {}", self.team, path, elapsed.as_secs_f64() * 1000.0, e)),
+        // only log init/finish and errors, skip per-turn /act OK to reduce noise
+        if path != "/act" || result.is_err() {
+            match &result {
+                Ok(_) => log(&format!("[{:?}] POST {} OK ({:.1}ms)", self.team, path, elapsed.as_secs_f64() * 1000.0)),
+                Err(e) => log(&format!("[{:?}] POST {} FAIL ({:.1}ms): {}", self.team, path, elapsed.as_secs_f64() * 1000.0, e)),
+            }
         }
         result
     }
 
     fn init(&self, state: &GameState) {
         let req = InitRequest::from_state(&self.match_id, state, self.team);
-        if let Err(e) = self.post::<_, serde_json::Value>("/init", &req) {
+        if let Err(e) = self.post_with_timeout::<_, serde_json::Value>("/init", &req, 5000) {
             log(&format!("[{:?}] /init error: {e}", self.team));
         }
     }
@@ -93,7 +120,7 @@ impl HttpBot {
             }),
             total_turns: 500,
         };
-        if let Err(e) = self.post::<_, serde_json::Value>("/finish", &req) {
+        if let Err(e) = self.post_with_timeout::<_, serde_json::Value>("/finish", &req, 5000) {
             log(&format!("[{:?}] /finish error: {e}", self.team));
         }
     }
@@ -187,7 +214,7 @@ fn main() {
     let t = Instant::now();
     let (_, replay, summary) = match &layout_json {
         Some(json) => run_match_with_layout(seed, config, json, &bot_a, &bot_b),
-        None => run_match(seed, config, &bot_a, &bot_b),
+        None => run_match_with_progress(seed, config, &bot_a, &bot_b),
     };
     log(&format!("--- match done ({:.0}ms, {} turns) ---", t.elapsed().as_secs_f64() * 1000.0, replay.frames.len()));
 
@@ -245,6 +272,47 @@ fn extract_map_name(json: &str) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+fn run_match_with_progress(
+    seed: u64, config: GameConfig,
+    alpha: &dyn BotStrategy, beta: &dyn BotStrategy,
+) -> (GameState, engine_core::Replay, engine_core::MatchSummary) {
+    use engine_core::{Replay, Team};
+    use engine_core::rules::apply_turn;
+    let mut state = GameState::new(seed, config);
+    let max_turns = state.config.max_turns;
+    let mut replay = Replay::new(seed, &state);
+    let match_start = Instant::now();
+    let mut slow_turns = 0u32;
+    while state.turn < max_turns {
+        let turn_start = Instant::now();
+        let a = alpha.select_actions(&state, Team::Alpha);
+        let alpha_ms = turn_start.elapsed().as_secs_f64() * 1000.0;
+        let b = beta.select_actions(&state, Team::Beta);
+        let total_ms = turn_start.elapsed().as_secs_f64() * 1000.0;
+        replay.frames.push(apply_turn(&mut state, a, b));
+        if total_ms > 400.0 { slow_turns += 1; }
+        // log every 50 turns for timing stats
+        if state.turn % 50 == 0 {
+            log(&format!("  turn {}/{} alpha={:.0}ms total={:.0}ms elapsed={:.1}s slow_turns={}",
+                state.turn, max_turns, alpha_ms, total_ms,
+                match_start.elapsed().as_secs_f64(), slow_turns));
+        }
+        // output progress every turn so SSE can stream in real time
+        println!("PROGRESS {}/{} {}:{}", state.turn, max_turns, state.scores[0], state.scores[1]);
+        let _ = io::stdout().flush();
+    }
+    log(&format!("match complete: {} turns in {:.1}s, {} slow turns (>400ms)",
+        max_turns, match_start.elapsed().as_secs_f64(), slow_turns));
+    let winner = match state.scores[0].cmp(&state.scores[1]) {
+        std::cmp::Ordering::Greater => Some(Team::Alpha),
+        std::cmp::Ordering::Less => Some(Team::Beta),
+        std::cmp::Ordering::Equal => None,
+    };
+    let summary = engine_core::MatchSummary { seed, final_scores: state.scores, winner };
+    replay.summary = Some(summary.clone());
+    (state, replay, summary)
+}
+
 fn run_match_with_layout(
     seed: u64, config: GameConfig, layout_json: &str,
     alpha: &dyn BotStrategy, beta: &dyn BotStrategy,
@@ -252,12 +320,30 @@ fn run_match_with_layout(
     use engine_core::{Replay, Team};
     use engine_core::rules::apply_turn;
     let mut state = GameState::new_from_layout(seed, config, layout_json);
+    let max_turns = state.config.max_turns;
     let mut replay = Replay::new(seed, &state);
-    while state.turn < state.config.max_turns {
+    let match_start = Instant::now();
+    let mut slow_turns = 0u32;
+    while state.turn < max_turns {
+        let turn_start = Instant::now();
         let a = alpha.select_actions(&state, Team::Alpha);
+        let alpha_ms = turn_start.elapsed().as_secs_f64() * 1000.0;
         let b = beta.select_actions(&state, Team::Beta);
+        let total_ms = turn_start.elapsed().as_secs_f64() * 1000.0;
         replay.frames.push(apply_turn(&mut state, a, b));
+        if total_ms > 400.0 { slow_turns += 1; }
+        if state.turn % 50 == 0 {
+            log(&format!("  turn {}/{} alpha={:.0}ms total={:.0}ms elapsed={:.1}s slow_turns={}",
+                state.turn, max_turns, alpha_ms, total_ms,
+                match_start.elapsed().as_secs_f64(), slow_turns));
+        }
+        println!("PROGRESS {}/{} {}:{}", state.turn, max_turns, state.scores[0], state.scores[1]);
+        let _ = io::stdout().flush();
+        // small delay so the live progress bar is visible
+        std::thread::sleep(Duration::from_millis(20));
     }
+    log(&format!("match complete: {} turns in {:.1}s, {} slow turns (>400ms)",
+        max_turns, match_start.elapsed().as_secs_f64(), slow_turns));
     let winner = match state.scores[0].cmp(&state.scores[1]) {
         std::cmp::Ordering::Greater => Some(Team::Alpha),
         std::cmp::Ordering::Less => Some(Team::Beta),

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -19,6 +21,77 @@ import (
 
 var db *sql.DB
 var dataDir string
+var adminToken string
+
+// ── live match progress ──────────────────────────────────────────────────────
+
+type matchProgress struct {
+	Turn   int `json:"turn"`
+	Total  int `json:"total"`
+	ScoreA int `json:"score_a"`
+	ScoreB int `json:"score_b"`
+}
+
+type matchLive struct {
+	mu          sync.Mutex
+	latest      matchProgress
+	subscribers []chan matchProgress
+	done        bool
+}
+
+var liveMatches sync.Map // map[int64]*matchLive
+
+func getLive(matchID int64) *matchLive {
+	v, _ := liveMatches.LoadOrStore(matchID, &matchLive{})
+	return v.(*matchLive)
+}
+
+func (ml *matchLive) publish(p matchProgress) {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	ml.latest = p
+	for _, ch := range ml.subscribers {
+		select {
+		case ch <- p:
+		default:
+		}
+	}
+}
+
+func (ml *matchLive) finish() {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	ml.done = true
+	for _, ch := range ml.subscribers {
+		close(ch)
+	}
+	ml.subscribers = nil
+}
+
+func (ml *matchLive) subscribe() (chan matchProgress, func()) {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	ch := make(chan matchProgress, 64)
+	if ml.done {
+		close(ch)
+		return ch, func() {}
+	}
+	// send current state immediately
+	if ml.latest.Total > 0 {
+		ch <- ml.latest
+	}
+	ml.subscribers = append(ml.subscribers, ch)
+	return ch, func() {
+		ml.mu.Lock()
+		defer ml.mu.Unlock()
+		for i, c := range ml.subscribers {
+			if c == ch {
+				ml.subscribers = append(ml.subscribers[:i], ml.subscribers[i+1:]...)
+				break
+			}
+		}
+	}
+}
 
 func main() {
 	// ARENA_DATA_DIR controls where all persistent data goes
@@ -44,6 +117,12 @@ func main() {
 
 	log.Printf("data dir: %s", dataDir)
 
+	adminToken = os.Getenv("ARENA_ADMIN_TOKEN")
+	if adminToken == "" {
+		adminToken = "mascompelete2026"
+		log.Printf("ARENA_ADMIN_TOKEN not set, using default token")
+	}
+
 	dbPath := filepath.Join(dataDir, "arena.db")
 	var dbErr error
 	db, dbErr = sql.Open("sqlite3", dbPath)
@@ -66,6 +145,7 @@ func main() {
 	mux.HandleFunc("GET /maps", handleListMaps)
 	mux.HandleFunc("GET /replays", handleListReplays)
 	mux.HandleFunc("GET /replays/{name}", handleGetReplay)
+	mux.HandleFunc("GET /matches/{id}/live", handleMatchLive)
 
 	port := "9090"
 	log.Printf("Arena API listening on :%s", port)
@@ -103,6 +183,34 @@ func initDB() {
 	}
 	// migrate: add map_path column if it doesn't exist yet
 	db.Exec(`ALTER TABLE matches ADD COLUMN map_path TEXT`)
+	db.Exec(`ALTER TABLE matches ADD COLUMN latency_a INTEGER`)
+	db.Exec(`ALTER TABLE matches ADD COLUMN latency_b INTEGER`)
+}
+
+// pingBot sends a GET to bot's /health and returns latency in ms, or error
+func pingBot(botURL string) (int, error) {
+	url := strings.TrimRight(botURL, "/") + "/health"
+	t := time.Now()
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url)
+	latency := int(time.Since(t).Milliseconds())
+	if err != nil {
+		return latency, fmt.Errorf("ping %s failed: %v", url, err)
+	}
+	resp.Body.Close()
+	return latency, nil
+}
+
+func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		token = r.Header.Get("X-Admin-Token")
+	}
+	if token != adminToken {
+		writeErr(w, 403, "需要管理员权限，请在 URL 中添加 ?token=xxx")
+		return false
+	}
+	return true
 }
 
 // ── CORS middleware ───────────────────────────────────────────────────────────
@@ -168,6 +276,9 @@ func handleRegisterBot(w http.ResponseWriter, r *http.Request) {
 // ── DELETE /bots/{id} ────────────────────────────────────────────────────────
 
 func handleDeleteBot(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeErr(w, 400, "invalid id")
@@ -219,6 +330,8 @@ type Match struct {
 	ScoreA     *int    `json:"score_a"`
 	ScoreB     *int    `json:"score_b"`
 	ReplayPath *string `json:"replay_path"`
+	LatencyA   *int    `json:"latency_a"`
+	LatencyB   *int    `json:"latency_b"`
 	StartedAt  string  `json:"started_at"`
 	FinishedAt *string `json:"finished_at"`
 }
@@ -250,6 +363,28 @@ func handleStartMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// pre-match latency check
+	latA, errA := pingBot(botAURL)
+	latB, errB := pingBot(botBURL)
+	log.Printf("[match] ping: %s=%dms(err=%v) %s=%dms(err=%v)", botAName, latA, errA, botBName, latB, errB)
+
+	if errA != nil {
+		writeErr(w, 400, fmt.Sprintf("无法连接 %s（%s）：%v", botAName, botAURL, errA))
+		return
+	}
+	if errB != nil {
+		writeErr(w, 400, fmt.Sprintf("无法连接 %s（%s）：%v", botBName, botBURL, errB))
+		return
+	}
+	if latA > 500 {
+		writeErr(w, 400, fmt.Sprintf("%s 延迟过高（%dms > 500ms），请检查网络后重试", botAName, latA))
+		return
+	}
+	if latB > 500 {
+		writeErr(w, 400, fmt.Sprintf("%s 延迟过高（%dms > 500ms），请检查网络后重试", botBName, latB))
+		return
+	}
+
 	seed := req.Seed
 	if seed == 0 {
 		seed = time.Now().UnixNano() % 1_000_000
@@ -261,8 +396,8 @@ func handleStartMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := db.Exec(
-		`INSERT INTO matches (bot_a_id, bot_b_id, seed, map_path, status) VALUES (?, ?, ?, ?, 'running')`,
-		req.BotAID, req.BotBID, seed, mapPathPtr,
+		`INSERT INTO matches (bot_a_id, bot_b_id, seed, map_path, status, latency_a, latency_b) VALUES (?, ?, ?, ?, 'running', ?, ?)`,
+		req.BotAID, req.BotBID, seed, mapPathPtr, latA, latB,
 	)
 	if err != nil {
 		log.Printf("[match] db insert failed: %v", err)
@@ -271,12 +406,12 @@ func handleStartMatch(w http.ResponseWriter, r *http.Request) {
 	}
 	matchID, _ := res.LastInsertId()
 
-	log.Printf("[match %d] started: %s(%s) vs %s(%s) seed=%d map=%s",
-		matchID, botAName, botAURL, botBName, botBURL, seed, req.MapPath)
+	log.Printf("[match %d] started: %s(%s, %dms) vs %s(%s, %dms) seed=%d map=%s",
+		matchID, botAName, botAURL, latA, botBName, botBURL, latB, seed, req.MapPath)
 
 	go runMatch(matchID, botAURL, botBURL, seed, req.MapPath)
 
-	writeJSON(w, 202, map[string]any{"id": matchID, "seed": seed, "status": "running"})
+	writeJSON(w, 202, map[string]any{"id": matchID, "seed": seed, "status": "running", "latency_a": latA, "latency_b": latB})
 }
 
 func runMatch(matchID int64, botAURL, botBURL string, seed int64, mapPath string) {
@@ -321,12 +456,54 @@ func runMatch(matchID int64, botAURL, botBURL string, seed int64, mapPath string
 		cmd.Dir = filepath.Dir(d)
 		log.Printf("[match %d] working dir: %s", matchID, cmd.Dir)
 	}
-	out, err := cmd.CombinedOutput()
-	elapsed := time.Since(started)
 
-	if len(out) > 0 {
-		log.Printf("[match %d] runner output:\n%s", matchID, string(out))
+	// pipe stdout for real-time progress reading
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Printf("[match %d] FAILED to create stdout pipe: %v", matchID, err)
+		db.Exec(`UPDATE matches SET status='error', finished_at=CURRENT_TIMESTAMP WHERE id=?`, matchID)
+		return
 	}
+	// capture stderr separately
+	var stderrBuf strings.Builder
+	cmd.Stderr = &stderrWriter{matchID: matchID, buf: &stderrBuf}
+
+	live := getLive(matchID)
+	defer func() {
+		live.finish()
+		// delay cleanup so late SSE subscribers can still get final state
+		go func() {
+			time.Sleep(30 * time.Second)
+			liveMatches.Delete(matchID)
+		}()
+	}()
+
+	if err := cmd.Start(); err != nil {
+		log.Printf("[match %d] FAILED to start: %v", matchID, err)
+		db.Exec(`UPDATE matches SET status='error', finished_at=CURRENT_TIMESTAMP WHERE id=?`, matchID)
+		return
+	}
+	log.Printf("[match %d] process started (pid=%d)", matchID, cmd.Process.Pid)
+
+	var allOutput strings.Builder
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		allOutput.WriteString(line)
+		allOutput.WriteByte('\n')
+
+		var turn, total, sa, sb int
+		if n, _ := fmt.Sscanf(line, "PROGRESS %d/%d %d:%d", &turn, &total, &sa, &sb); n == 4 {
+			live.publish(matchProgress{Turn: turn, Total: total, ScoreA: sa, ScoreB: sb})
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("[match %d] scanner error: %v", matchID, err)
+	}
+
+	err = cmd.Wait()
+	elapsed := time.Since(started)
+	out := allOutput.String()
 
 	if err != nil {
 		log.Printf("[match %d] FAILED after %s: %v", matchID, elapsed, err)
@@ -335,12 +512,40 @@ func runMatch(matchID int64, botAURL, botBURL string, seed int64, mapPath string
 	}
 
 	// parse last line: "Done  winner=Alpha  alpha=1234  beta=987  replay=..."
-	winner, scoreA, scoreB, replayPath := parseRunnerOutput(string(out))
+	winner, scoreA, scoreB, replayPath := parseRunnerOutput(out)
 	log.Printf("[match %d] DONE in %s: winner=%s score=%d-%d replay=%s", matchID, elapsed, winner, scoreA, scoreB, replayPath)
 	db.Exec(
 		`UPDATE matches SET status='done', winner=?, score_a=?, score_b=?, replay_path=?, finished_at=CURRENT_TIMESTAMP WHERE id=?`,
 		winner, scoreA, scoreB, replayPath, matchID,
 	)
+}
+
+// stderrWriter captures stderr and logs each line in real time
+type stderrWriter struct {
+	matchID int64
+	buf     *strings.Builder
+	lineBuf []byte
+}
+
+func (w *stderrWriter) Write(p []byte) (int, error) {
+	w.buf.Write(p)
+	w.lineBuf = append(w.lineBuf, p...)
+	for {
+		idx := -1
+		for i, b := range w.lineBuf {
+			if b == '\n' {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			break
+		}
+		line := string(w.lineBuf[:idx])
+		w.lineBuf = w.lineBuf[idx+1:]
+		log.Printf("[match %d] stderr: %s", w.matchID, line)
+	}
+	return len(p), nil
 }
 
 func parseRunnerOutput(out string) (winner string, scoreA, scoreB int, replayPath string) {
@@ -379,7 +584,7 @@ func handleListMatches(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query(`
 		SELECT m.id, m.bot_a_id, m.bot_b_id, ba.name, bb.name,
 		       m.seed, m.map_path, m.status, m.winner, m.score_a, m.score_b,
-		       m.replay_path, m.started_at, m.finished_at
+		       m.replay_path, m.latency_a, m.latency_b, m.started_at, m.finished_at
 		FROM matches m
 		JOIN bots ba ON ba.id = m.bot_a_id
 		JOIN bots bb ON bb.id = m.bot_b_id
@@ -395,7 +600,7 @@ func handleListMatches(w http.ResponseWriter, r *http.Request) {
 		var m Match
 		rows.Scan(&m.ID, &m.BotAID, &m.BotBID, &m.BotAName, &m.BotBName,
 			&m.Seed, &m.MapPath, &m.Status, &m.Winner, &m.ScoreA, &m.ScoreB,
-			&m.ReplayPath, &m.StartedAt, &m.FinishedAt)
+			&m.ReplayPath, &m.LatencyA, &m.LatencyB, &m.StartedAt, &m.FinishedAt)
 		matches = append(matches, m)
 	}
 	writeJSON(w, 200, matches)
@@ -414,14 +619,14 @@ func handleGetMatch(w http.ResponseWriter, r *http.Request) {
 	err = db.QueryRow(`
 		SELECT m.id, m.bot_a_id, m.bot_b_id, ba.name, bb.name,
 		       m.seed, m.map_path, m.status, m.winner, m.score_a, m.score_b,
-		       m.replay_path, m.started_at, m.finished_at
+		       m.replay_path, m.latency_a, m.latency_b, m.started_at, m.finished_at
 		FROM matches m
 		JOIN bots ba ON ba.id = m.bot_a_id
 		JOIN bots bb ON bb.id = m.bot_b_id
 		WHERE m.id = ?
 	`, id).Scan(&m.ID, &m.BotAID, &m.BotBID, &m.BotAName, &m.BotBName,
 		&m.Seed, &m.MapPath, &m.Status, &m.Winner, &m.ScoreA, &m.ScoreB,
-		&m.ReplayPath, &m.StartedAt, &m.FinishedAt)
+		&m.ReplayPath, &m.LatencyA, &m.LatencyB, &m.StartedAt, &m.FinishedAt)
 	if err == sql.ErrNoRows {
 		writeErr(w, 404, "match not found")
 		return
@@ -436,6 +641,9 @@ func handleGetMatch(w http.ResponseWriter, r *http.Request) {
 // ── DELETE /matches/{id} ─────────────────────────────────────────────────────
 
 func handleDeleteMatch(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeErr(w, 400, "invalid id")
@@ -457,6 +665,9 @@ func handleDeleteMatch(w http.ResponseWriter, r *http.Request) {
 // ── DELETE /matches (clear all) ─────────────────────────────────────────────
 
 func handleClearMatches(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	res, err := db.Exec(`DELETE FROM matches`)
 	if err != nil {
 		writeErr(w, 500, err.Error())
@@ -637,4 +848,49 @@ func handleGetReplay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	w.Write(data)
+}
+
+// ── GET /matches/{id}/live (SSE) ─────────────────────────────────────────────
+
+func handleMatchLive(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, 400, "invalid id")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, 500, "streaming not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	live := getLive(id)
+	ch, unsub := live.subscribe()
+	defer unsub()
+
+	// if match already done, send final state and close
+	ctx := r.Context()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case p, ok := <-ch:
+			if !ok {
+				// match finished
+				fmt.Fprintf(w, "data: {\"done\":true}\n\n")
+				flusher.Flush()
+				return
+			}
+			data, _ := json.Marshal(p)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
 }
