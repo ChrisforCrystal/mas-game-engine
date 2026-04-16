@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -19,10 +20,23 @@ import (
 var db *sql.DB
 
 func main() {
-	var err error
-	db, err = sql.Open("sqlite3", "./arena.db")
+	// setup log directory and file
+	logDir := "logs"
+	if d := os.Getenv("ARENA_LOG_DIR"); d != "" {
+		logDir = d
+	}
+	os.MkdirAll(logDir, 0755)
+	logFile, err := os.OpenFile(filepath.Join(logDir, "arena-api.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("open log file:", err)
+	}
+	defer logFile.Close()
+	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
+
+	var dbErr error
+	db, dbErr = sql.Open("sqlite3", "./arena.db")
+	if dbErr != nil {
+		log.Fatal(dbErr)
 	}
 	defer db.Close()
 	initDB()
@@ -121,16 +135,19 @@ func handleRegisterBot(w http.ResponseWriter, r *http.Request) {
 		Owner string `json:"owner"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.URL == "" {
+		log.Printf("[bot] register failed: invalid request")
 		writeErr(w, 400, "name and url are required")
 		return
 	}
 	req.URL = strings.TrimSpace(req.URL)
 	res, err := db.Exec(`INSERT INTO bots (name, url, owner) VALUES (?, ?, ?)`, req.Name, req.URL, req.Owner)
 	if err != nil {
+		log.Printf("[bot] register failed name=%s: %v", req.Name, err)
 		writeErr(w, 409, "bot name already exists or db error: "+err.Error())
 		return
 	}
 	id, _ := res.LastInsertId()
+	log.Printf("[bot] registered id=%d name=%s url=%s", id, req.Name, req.URL)
 	writeJSON(w, 201, map[string]any{"id": id, "name": req.Name})
 }
 
@@ -200,18 +217,21 @@ func handleStartMatch(w http.ResponseWriter, r *http.Request) {
 		MapPath string `json:"map_path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[match] start failed: invalid request body")
 		writeErr(w, 400, "invalid request")
 		return
 	}
 
-	var botAURL, botBURL string
-	err := db.QueryRow(`SELECT url FROM bots WHERE id = ?`, req.BotAID).Scan(&botAURL)
+	var botAURL, botAName, botBURL, botBName string
+	err := db.QueryRow(`SELECT url, name FROM bots WHERE id = ?`, req.BotAID).Scan(&botAURL, &botAName)
 	if err != nil {
+		log.Printf("[match] start failed: bot_a id=%d not found", req.BotAID)
 		writeErr(w, 404, "bot_a not found")
 		return
 	}
-	err = db.QueryRow(`SELECT url FROM bots WHERE id = ?`, req.BotBID).Scan(&botBURL)
+	err = db.QueryRow(`SELECT url, name FROM bots WHERE id = ?`, req.BotBID).Scan(&botBURL, &botBName)
 	if err != nil {
+		log.Printf("[match] start failed: bot_b id=%d not found", req.BotBID)
 		writeErr(w, 404, "bot_b not found")
 		return
 	}
@@ -231,10 +251,14 @@ func handleStartMatch(w http.ResponseWriter, r *http.Request) {
 		req.BotAID, req.BotBID, seed, mapPathPtr,
 	)
 	if err != nil {
+		log.Printf("[match] db insert failed: %v", err)
 		writeErr(w, 500, err.Error())
 		return
 	}
 	matchID, _ := res.LastInsertId()
+
+	log.Printf("[match %d] started: %s(%s) vs %s(%s) seed=%d map=%s",
+		matchID, botAName, botAURL, botBName, botBURL, seed, req.MapPath)
 
 	go runMatch(matchID, botAURL, botBURL, seed, req.MapPath)
 
@@ -242,35 +266,62 @@ func handleStartMatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func runMatch(matchID int64, botAURL, botBURL string, seed int64, mapPath string) {
+	started := time.Now()
+	log.Printf("[match %d] launching runner: alpha=%s beta=%s seed=%d map=%s", matchID, botAURL, botBURL, seed, mapPath)
+
 	// find http-match binary relative to this process
 	exe, err := os.Executable()
 	if err != nil {
 		exe = "."
 	}
-	// look for http-match next to this binary first, then cwd, then PATH
-	runnerPath := filepath.Join(filepath.Dir(exe), "http-match")
-	if _, err := os.Stat(runnerPath); err != nil {
-		runnerPath = "./http-match"
+	// look for http-match: next to binary, cwd, project root target/release, then PATH
+	cwd, _ := os.Getwd()
+	candidates := []string{
+		filepath.Join(filepath.Dir(exe), "http-match"),
+		"./http-match",
+		filepath.Join(cwd, "target", "release", "http-match"),
+		filepath.Join(cwd, "..", "target", "release", "http-match"),
+		filepath.Join(cwd, "..", "..", "target", "release", "http-match"),
 	}
-	if _, err := os.Stat(runnerPath); err != nil {
-		runnerPath = "http-match"
+	runnerPath := "http-match" // fallback to PATH
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			if abs, err := filepath.Abs(c); err == nil {
+				runnerPath = abs
+			} else {
+				runnerPath = c
+			}
+			break
+		}
 	}
+	log.Printf("[match %d] runner binary: %s", matchID, runnerPath)
 
 	args := []string{botAURL, botBURL, strconv.FormatInt(seed, 10)}
 	if mapPath != "" {
 		args = append(args, "--map", mapPath)
 	}
 	cmd := exec.Command(runnerPath, args...)
+	// set working dir to project root (where maps/ lives)
+	if d := mapsDir(); d != "maps" {
+		cmd.Dir = filepath.Dir(d)
+		log.Printf("[match %d] working dir: %s", matchID, cmd.Dir)
+	}
 	out, err := cmd.CombinedOutput()
-	log.Printf("[match %d] runner output:\n%s", matchID, string(out))
+	elapsed := time.Since(started)
+
+	if len(out) > 0 {
+		log.Printf("[match %d] runner output:\n%s", matchID, string(out))
+	}
 
 	if err != nil {
+		log.Printf("[match %d] FAILED after %s: %v", matchID, elapsed, err)
 		db.Exec(`UPDATE matches SET status='error', finished_at=CURRENT_TIMESTAMP WHERE id=?`, matchID)
 		return
 	}
 
 	// parse last line: "Done  winner=Alpha  alpha=1234  beta=987  replay=..."
 	winner, scoreA, scoreB, replayPath := parseRunnerOutput(string(out))
+	log.Printf("[match %d] DONE in %s: winner=%s score=%d-%d replay=%s", matchID, elapsed, winner, scoreA, scoreB, replayPath)
 	db.Exec(
 		`UPDATE matches SET status='done', winner=?, score_a=?, score_b=?, replay_path=?, finished_at=CURRENT_TIMESTAMP WHERE id=?`,
 		winner, scoreA, scoreB, replayPath, matchID,

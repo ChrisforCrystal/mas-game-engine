@@ -1,10 +1,33 @@
-use std::{env, fs, path::PathBuf, time::Duration};
+use std::{env, fs, io::Write as _, path::PathBuf, sync::Mutex, time::{Duration, Instant}};
 
 use engine_core::{
     ActRequest, ActResponse, BotStrategy, GameConfig, GameState, InitRequest,
     RobotAction, Team, run_match,
     state::MatchSummary,
 };
+
+// ── Logger ───────────────────────────────────────────────────────────────────
+
+static LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
+
+fn log_init(match_id: &str) {
+    let log_dir = env::var("ARENA_LOG_DIR").unwrap_or_else(|_| "logs".to_string());
+    fs::create_dir_all(&log_dir).ok();
+    let path = PathBuf::from(&log_dir).join(format!("{match_id}.log"));
+    if let Ok(f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        *LOG_FILE.lock().unwrap() = Some(f);
+    }
+    eprintln!("log file: {}", path.display());
+}
+
+fn log(msg: &str) {
+    eprintln!("{msg}");
+    if let Ok(mut guard) = LOG_FILE.lock() {
+        if let Some(f) = guard.as_mut() {
+            let _ = writeln!(f, "{msg}");
+        }
+    }
+}
 
 // ── HttpBot ───────────────────────────────────────────────────────────────────
 
@@ -31,22 +54,29 @@ impl HttpBot {
         body: &T,
     ) -> Result<R, String> {
         let url = format!("{}{}", self.base_url, path);
+        let t = Instant::now();
         let agent = ureq::AgentBuilder::new()
             .timeout(Duration::from_millis(self.timeout_ms + 50)) // slight buffer over game timeout
             .build();
-        agent
+        let result = agent
             .post(&url)
             .set("Content-Type", "application/json")
             .send_json(body)
             .map_err(|e| format!("POST {path} failed: {e}"))?
             .into_json::<R>()
-            .map_err(|e| format!("deserialize {path} response failed: {e}"))
+            .map_err(|e| format!("deserialize {path} response failed: {e}"));
+        let elapsed = t.elapsed();
+        match &result {
+            Ok(_) => log(&format!("[{:?}] POST {} OK ({:.1}ms)", self.team, path, elapsed.as_secs_f64() * 1000.0)),
+            Err(e) => log(&format!("[{:?}] POST {} FAIL ({:.1}ms): {}", self.team, path, elapsed.as_secs_f64() * 1000.0, e)),
+        }
+        result
     }
 
     fn init(&self, state: &GameState) {
         let req = InitRequest::from_state(&self.match_id, state, self.team);
         if let Err(e) = self.post::<_, serde_json::Value>("/init", &req) {
-            eprintln!("[{:?}] /init error: {e}", self.team);
+            log(&format!("[{:?}] /init error: {e}", self.team));
         }
     }
 
@@ -64,7 +94,7 @@ impl HttpBot {
             total_turns: 500,
         };
         if let Err(e) = self.post::<_, serde_json::Value>("/finish", &req) {
-            eprintln!("[{:?}] /finish error: {e}", self.team);
+            log(&format!("[{:?}] /finish error: {e}", self.team));
         }
     }
 }
@@ -75,7 +105,7 @@ impl BotStrategy for HttpBot {
         match self.post::<_, ActResponse>("/act", &req) {
             Ok(resp) => resp.parse_actions(team, &state.robots),
             Err(e) => {
-                eprintln!("[{team:?}] /act error (defaulting to Wait): {e}");
+                log(&format!("[{team:?}] /act error turn={} (defaulting to Wait): {e}", state.turn));
                 state
                     .robots
                     .iter()
@@ -88,6 +118,7 @@ impl BotStrategy for HttpBot {
 }
 
 fn main() {
+    let total_start = Instant::now();
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
         eprintln!("Usage: http-match <bot-a-url> <bot-b-url> [seed] [--map <path>]");
@@ -121,9 +152,17 @@ fn main() {
     let match_id = format!("match-{seed}-{ts}");
     let config = GameConfig::default();
 
+    log_init(&match_id);
+    log("=== http-match start ===");
+    log(&format!("  match_id: {match_id}"));
+    log(&format!("  alpha:    {bot_a_url}"));
+    log(&format!("  beta:     {bot_b_url}"));
+    log(&format!("  seed:     {seed}"));
+    log(&format!("  map:      {}", map_path.as_deref().unwrap_or("(random)")));
+
     let layout_json: Option<String> = map_path.as_ref().map(|p| {
         let json = fs::read_to_string(p)
-            .unwrap_or_else(|e| { eprintln!("Cannot read map file {p}: {e}"); std::process::exit(1); });
+            .unwrap_or_else(|e| { log(&format!("FATAL: Cannot read map file {p}: {e}")); std::process::exit(1); });
         let name = extract_map_name(&json);
         println!("Map: {name}");
         json
@@ -137,19 +176,26 @@ fn main() {
     let bot_a = HttpBot::new(bot_a_url, &match_id, Team::Alpha);
     let bot_b = HttpBot::new(bot_b_url, &match_id, Team::Beta);
 
-    println!("Initialising bots...");
+    log("--- init phase ---");
+    let t = Instant::now();
     bot_a.init(&init_state);
     bot_b.init(&init_state);
+    log(&format!("--- init done ({:.0}ms) ---", t.elapsed().as_secs_f64() * 1000.0));
 
     println!("Starting match  seed={seed}  alpha={bot_a_url}  beta={bot_b_url}");
+    log("--- match phase ---");
+    let t = Instant::now();
     let (_, replay, summary) = match &layout_json {
         Some(json) => run_match_with_layout(seed, config, json, &bot_a, &bot_b),
         None => run_match(seed, config, &bot_a, &bot_b),
     };
+    log(&format!("--- match done ({:.0}ms, {} turns) ---", t.elapsed().as_secs_f64() * 1000.0, replay.frames.len()));
 
-    println!("Notifying bots of result...");
+    log("--- finish phase ---");
+    let t = Instant::now();
     bot_a.finish(&summary);
     bot_b.finish(&summary);
+    log(&format!("--- finish done ({:.0}ms) ---", t.elapsed().as_secs_f64() * 1000.0));
 
     let artifacts_dir = PathBuf::from("artifacts/replays");
     fs::create_dir_all(&artifacts_dir).expect("create artifacts dir");
@@ -162,6 +208,9 @@ fn main() {
         Some(Team::Beta) => "Beta",
         None => "Draw",
     };
+    log(&format!("=== http-match end ({:.0}ms total) winner={winner} score={}:{} ===",
+        total_start.elapsed().as_secs_f64() * 1000.0,
+        summary.final_scores[0], summary.final_scores[1]));
     println!(
         "Done  winner={winner}  alpha={}  beta={}  replay={}",
         summary.final_scores[0], summary.final_scores[1], replay_path.display()
