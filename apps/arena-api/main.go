@@ -143,6 +143,7 @@ func main() {
 	mux.HandleFunc("DELETE /matches", handleClearMatches)
 	mux.HandleFunc("GET /rankings", handleRankings)
 	mux.HandleFunc("GET /maps", handleListMaps)
+	mux.HandleFunc("GET /maps/{name}", handleGetMap)
 	mux.HandleFunc("GET /replays", handleListReplays)
 	mux.HandleFunc("GET /replays/{name}", handleGetReplay)
 	mux.HandleFunc("GET /matches/{id}/live", handleMatchLive)
@@ -728,6 +729,26 @@ func handleListMaps(w http.ResponseWriter, r *http.Request) {
 		maps = append(maps, MapInfo{Path: filepath.Join("maps", e.Name()), Name: v.Name, Description: v.Description})
 	}
 	writeJSON(w, 200, maps)
+}
+
+// ── GET /maps/{name} ─────────────────────────────────────────────────────────
+
+func handleGetMap(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	path := filepath.Join(mapsDir(), name)
+	// safety: prevent path traversal
+	if filepath.Dir(path) != mapsDir() {
+		writeErr(w, 400, "invalid map name")
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		writeErr(w, 404, "map not found")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	w.Write(data)
 }
 
 // ── GET /rankings ─────────────────────────────────────────────────────────────

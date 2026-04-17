@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use rand::Rng;
+use rand::SeedableRng;
 use serde::Deserialize;
 
 use crate::types::{CabinetConfig, Direction, Position, Tile};
@@ -187,11 +189,205 @@ pub fn parse_layout(layout: &MapLayout) -> GeneratedMap {
     }
 }
 
-// ── Legacy procedural generator (kept for compatibility) ──────────────────────
+// ── Seeded procedural generator ─────────────────────────────────────────────
 
-pub fn generate_map(_seed: u64, config: &MapConfig) -> GeneratedMap {
-    let layout = builtin_layout_0(config);
+pub fn generate_map(seed: u64, config: &MapConfig) -> GeneratedMap {
+    let layout = seeded_layout(seed, config);
     parse_layout(&layout)
+}
+
+fn seeded_layout(seed: u64, config: &MapConfig) -> MapLayout {
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    let w = config.width;
+    let h = config.height;
+    let cx = w / 2;
+    let cy = h / 2;
+
+    let mut grid: Vec<Vec<char>> = vec![vec!['#'; w]; h];
+
+    // ── helper closures ──
+    let carve_rect = |grid: &mut Vec<Vec<char>>, x0: usize, y0: usize, x1: usize, y1: usize| {
+        for y in y0..=y1.min(h - 1) {
+            for x in x0..=x1.min(w - 1) {
+                grid[y][x] = '.';
+            }
+        }
+    };
+
+    // ── 1. Central arena (always present, slightly randomized size) ──
+    let arena_hw = 3 + rng.random_range(0..3usize); // half-width 3..5
+    let arena_hh = 3 + rng.random_range(0..3usize); // half-height 3..5
+    carve_rect(&mut grid, cx.saturating_sub(arena_hw), cy.saturating_sub(arena_hh),
+               (cx + arena_hw).min(w - 2), (cy + arena_hh).min(h - 2));
+
+    // ── 2. Main corridors from spawn to center ──
+    // horizontal corridor
+    let corr_hh = rng.random_range(1..3usize); // corridor half-height
+    carve_rect(&mut grid, 1, cy.saturating_sub(corr_hh), w - 2, cy + corr_hh);
+
+    // vertical corridor (randomized width)
+    let corr_hw = rng.random_range(1..3usize);
+    carve_rect(&mut grid, cx.saturating_sub(corr_hw), 1, cx + corr_hw, h - 2);
+
+    // ── 3. Random rooms (4-8 rooms, left-right symmetric) ──
+    let num_rooms = 4 + rng.random_range(0..5usize);
+    for _ in 0..num_rooms {
+        let rw = 2 + rng.random_range(0..4usize); // room half-width
+        let rh = 2 + rng.random_range(0..4usize); // room half-height
+        let rx = 3 + rng.random_range(0..(cx.saturating_sub(rw + 3)).max(1));
+        let ry = 3 + rng.random_range(0..(h.saturating_sub(rh * 2 + 6)).max(1));
+        // left room
+        carve_rect(&mut grid, rx.saturating_sub(rw), ry.saturating_sub(rh),
+                   (rx + rw).min(w - 2), (ry + rh).min(h - 2));
+        // mirror right room
+        let mx = w - 1 - rx;
+        carve_rect(&mut grid, mx.saturating_sub(rw), ry.saturating_sub(rh),
+                   (mx + rw).min(w - 2), (ry + rh).min(h - 2));
+    }
+
+    // ── 4. Random corridors connecting rooms ──
+    let num_extra = 2 + rng.random_range(0..4usize);
+    for _ in 0..num_extra {
+        if rng.random_bool(0.5) {
+            // horizontal corridor
+            let y = 2 + rng.random_range(0..(h - 4).max(1));
+            let x0 = 2 + rng.random_range(0..(w / 3).max(1));
+            let x1 = w - 2 - rng.random_range(0..(w / 3).max(1));
+            for x in x0..=x1.min(w - 2) {
+                if grid[y][x] == '#' { grid[y][x] = '.'; }
+            }
+        } else {
+            // vertical corridor
+            let x = 2 + rng.random_range(0..(w - 4).max(1));
+            let y0 = 2 + rng.random_range(0..(h / 3).max(1));
+            let y1 = h - 2 - rng.random_range(0..(h / 3).max(1));
+            for y in y0..=y1.min(h - 2) {
+                if grid[y][x] == '#' { grid[y][x] = '.'; }
+            }
+            // mirror
+            let mx = w - 1 - x;
+            if mx > 1 && mx < w - 1 {
+                for y in y0..=y1.min(h - 2) {
+                    if grid[y][mx] == '#' { grid[y][mx] = '.'; }
+                }
+            }
+        }
+    }
+
+    // ── 5. Spawns (left side Alpha, right side Beta) ──
+    let spawn_y_start = cy.saturating_sub(config.robots_per_team / 2);
+    for i in 0..config.robots_per_team {
+        let sy = (spawn_y_start + i).min(h - 2);
+        grid[sy][2] = 'A';
+        grid[sy][w - 3] = 'B';
+        // ensure spawn area is open
+        grid[sy][1] = '.';
+        grid[sy][3] = '.';
+        grid[sy][w - 2] = '.';
+        grid[sy][w - 4] = '.';
+    }
+
+    // ── 6. Conveyors (randomized patterns) ──
+    let conveyor_style = rng.random_range(0..4u32);
+    match conveyor_style {
+        0 => {
+            // Cross pattern: vertical center + horizontal arms
+            let vlen = 3 + rng.random_range(0..4usize);
+            for y in cy.saturating_sub(vlen)..=(cy + vlen).min(h - 2) {
+                if grid[y][cx.saturating_sub(1)] == '.' { grid[y][cx.saturating_sub(1)] = 'v'; }
+                if grid[y][(cx + 1).min(w - 2)] == '.' { grid[y][(cx + 1).min(w - 2)] = '^'; }
+            }
+            let hlen = 3 + rng.random_range(0..4usize);
+            for x in cx.saturating_sub(hlen)..=cx.saturating_sub(2) {
+                if grid[cy.saturating_sub(2)][x] == '.' { grid[cy.saturating_sub(2)][x] = '>'; }
+            }
+            for x in (cx + 2).min(w - 2)..=(cx + hlen).min(w - 2) {
+                if grid[cy.saturating_sub(2)][x] == '.' { grid[cy.saturating_sub(2)][x] = '<'; }
+            }
+        }
+        1 => {
+            // Loop pattern: clockwise ring around center
+            let r = 3 + rng.random_range(0..3usize);
+            let top = cy.saturating_sub(r);
+            let bot = (cy + r).min(h - 2);
+            let left = cx.saturating_sub(r);
+            let right = (cx + r).min(w - 2);
+            for x in left..right { if grid[top][x] == '.' { grid[top][x] = '>'; } }
+            for y in top..bot { if grid[y][right] == '.' { grid[y][right] = 'v'; } }
+            for x in (left + 1)..=right { if grid[bot][x] == '.' { grid[bot][x] = '<'; } }
+            for y in (top + 1)..=bot { if grid[y][left] == '.' { grid[y][left] = '^'; } }
+        }
+        2 => {
+            // Highway pattern: two horizontal lanes
+            let offset = 3 + rng.random_range(0..4usize);
+            let lane_top = cy.saturating_sub(offset);
+            let lane_bot = (cy + offset).min(h - 2);
+            let x0 = 4 + rng.random_range(0..4usize);
+            let x1 = w - 4 - rng.random_range(0..4usize);
+            for x in x0..=x1 {
+                if grid[lane_top][x] == '.' { grid[lane_top][x] = '>'; }
+                if grid[lane_bot][x] == '.' { grid[lane_bot][x] = '<'; }
+            }
+        }
+        _ => {
+            // Side channels: vertical conveyors on flanks
+            let col_l = 4 + rng.random_range(0..5usize);
+            let col_r = w - 1 - col_l;
+            let y0 = 4 + rng.random_range(0..4usize);
+            let y1 = h - 4 - rng.random_range(0..4usize);
+            for y in y0..=y1 {
+                if grid[y][col_l] == '.' { grid[y][col_l] = if y < cy { '^' } else { 'v' }; }
+                if grid[y][col_r] == '.' { grid[y][col_r] = if y < cy { 'v' } else { '^' }; }
+            }
+        }
+    }
+
+    // ── 7. Cabinets (6-10, placed on empty tiles, symmetric) ──
+    let num_cabs = 6 + rng.random_range(0..5usize);
+    let capacities = [1600u32, 1400, 1200, 1000, 900, 800, 700, 640, 580, 500];
+    let mut cab_count = 0u8;
+    let mut cabinets = HashMap::new();
+
+    // center cabinet
+    if grid[cy][cx] == '.' {
+        grid[cy][cx] = (b'0' + cab_count) as char;
+        cabinets.insert(cab_count.to_string(), capacities[cab_count as usize]);
+        cab_count += 1;
+    }
+
+    // place remaining cabinets in random positions
+    let mut attempts = 0;
+    while (cab_count as usize) < num_cabs && attempts < 200 {
+        attempts += 1;
+        let rx = 3 + rng.random_range(0..(cx.saturating_sub(3)).max(1));
+        let ry = 3 + rng.random_range(0..(h - 6).max(1));
+        if grid[ry][rx] != '.' { continue; }
+        let mx = w - 1 - rx;
+        if mx == rx || grid[ry][mx] != '.' { continue; }
+
+        // left cabinet
+        let ch_l = (b'0' + cab_count) as char;
+        if ch_l > 'f' { break; }
+        grid[ry][rx] = ch_l;
+        cabinets.insert(cab_count.to_string(), capacities.get(cab_count as usize).copied().unwrap_or(500));
+        cab_count += 1;
+
+        // right cabinet (mirror)
+        let ch_r = (b'0' + cab_count) as char;
+        if ch_r > 'f' { break; }
+        grid[ry][mx] = ch_r;
+        cabinets.insert(cab_count.to_string(), capacities.get(cab_count as usize).copied().unwrap_or(500));
+        cab_count += 1;
+    }
+
+    let layout_rows: Vec<String> = grid.iter().map(|row| row.iter().collect()).collect();
+
+    MapLayout {
+        name: format!("随机地图 (seed={})", seed),
+        layout: layout_rows,
+        cabinets,
+        energy_zones: EnergyZoneOverride::default(),
+    }
 }
 
 // ── Auto zone classification ──────────────────────────────────────────────────

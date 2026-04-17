@@ -58,6 +58,19 @@ export async function fetchMaps(): Promise<MapInfo[]> {
   return res.json();
 }
 
+export type MapDetail = {
+  name: string;
+  description: string;
+  layout: string[];
+  cabinets: Record<string, number>;
+};
+
+export async function fetchMapDetail(filename: string): Promise<MapDetail> {
+  const res = await fetch(`${API}/maps/${encodeURIComponent(filename)}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("map not found");
+  return res.json();
+}
+
 export async function fetchBots(): Promise<Bot[]> {
   const res = await fetch(`${API}/bots`, { cache: "no-store" });
   return res.json();
@@ -110,6 +123,15 @@ export async function startMatch(botAId: number, botBId: number, seed?: number, 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ bot_a_id: botAId, bot_b_id: botBId, seed: seed ?? 0, map_path: mapPath ?? "" }),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const body = await res.text();
+    try {
+      const json = JSON.parse(body);
+      throw new Error(json.error || body);
+    } catch (e) {
+      if (e instanceof Error && e.message !== body) throw e;
+      throw new Error(body);
+    }
+  }
   return res.json();
 }

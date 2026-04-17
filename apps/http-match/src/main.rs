@@ -43,7 +43,9 @@ struct HttpBot {
 impl HttpBot {
     fn new(base_url: &str, match_id: &str, team: Team) -> Self {
         let agent = ureq::AgentBuilder::new()
-            .timeout(Duration::from_millis(250)) // 200ms bot timeout + 50ms buffer
+            .timeout_connect(Duration::from_millis(250))
+            .timeout_read(Duration::from_millis(250))
+            .timeout_write(Duration::from_millis(250))
             .build();
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),

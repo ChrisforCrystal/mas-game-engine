@@ -12,9 +12,9 @@ export default async function Page({ searchParams }: Props) {
   if (!seed) {
     let matches: Match[] = [];
     try { matches = await fetchMatches(); } catch { /* ignore */ }
-    const matchMap: Record<string, { botA: string; botB: string; id: number }> = {};
+    const matchMap: Record<string, { botA: string; botB: string; id: number; mapPath: string | null }> = {};
     for (const m of matches) {
-      matchMap[String(m.seed)] = { botA: m.bot_a_name, botB: m.bot_b_name, id: m.id };
+      matchMap[String(m.seed)] = { botA: m.bot_a_name, botB: m.bot_b_name, id: m.id, mapPath: m.map_path };
     }
 
     // deduplicate by seed (keep latest replay per seed)
@@ -70,6 +70,11 @@ export default async function Page({ searchParams }: Props) {
                             <span style={{ color: "var(--alpha)" }}>{info.botA}</span>
                             <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>vs</span>
                             <span style={{ color: "var(--beta)" }}>{info.botB}</span>
+                            {info.mapPath && (
+                              <span style={{ fontSize: "0.72rem", color: "var(--muted)", opacity: 0.7 }}>
+                                {info.mapPath.replace(/^maps\//, "").replace(/\.json$/, "")}
+                              </span>
+                            )}
                           </>
                         ) : (
                           <span style={{ color: "var(--muted)" }}>seed={seedNum}</span>
@@ -117,12 +122,12 @@ export default async function Page({ searchParams }: Props) {
   // bot names: prefer URL params, fallback to match history
   let botAName: string | undefined = botA;
   let botBName: string | undefined = botB;
-  let matchMap: Record<string, { botA: string; botB: string; id: number }> = {};
+  let matchMap: Record<string, { botA: string; botB: string; id: number; mapPath: string | null }> = {};
   try {
     const matches = await fetchMatches();
     for (const m of matches) {
       const key = String(m.seed);
-      matchMap[key] = { botA: m.bot_a_name, botB: m.bot_b_name, id: m.id };
+      matchMap[key] = { botA: m.bot_a_name, botB: m.bot_b_name, id: m.id, mapPath: m.map_path };
     }
     if (!botAName || !botBName) {
       const seedNum = Number(seed.split("-")[0]);

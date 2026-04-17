@@ -10,7 +10,7 @@ import {
 
 import type { ReplayData, ReplayFrame, RobotState, Tile } from "@/lib/replay";
 
-type MatchInfo = { botA: string; botB: string; id: number };
+type MatchInfo = { botA: string; botB: string; id: number; mapPath?: string | null };
 
 type ReplayBoardProps = {
   replay: ReplayData;

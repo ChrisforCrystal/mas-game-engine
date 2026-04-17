@@ -36,6 +36,7 @@ export function TopNav() {
   const pathname = usePathname();
   const replayActive = pathname === "/";
   const arenaActive = pathname.startsWith("/arena");
+  const mapsActive = pathname.startsWith("/maps");
 
   return (
     <nav
@@ -55,6 +56,9 @@ export function TopNav() {
     >
       <Link href="/arena" style={navStyle(arenaActive)}>
         排行榜
+      </Link>
+      <Link href="/maps" style={navStyle(mapsActive)}>
+        地图
       </Link>
       <Link href="/" style={navStyle(replayActive)}>
         回放
