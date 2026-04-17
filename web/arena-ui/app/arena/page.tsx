@@ -119,7 +119,7 @@ export default function ArenaPage() {
     try {
       setLiveProgress(null);
       setLiveDone(false);
-      const res = await startMatch(a.id, b.id, matchSeed ? parseInt(matchSeed) : undefined, matchMap || undefined);
+      const res = await startMatch(a.id, b.id, matchSeed ? parseInt(matchSeed) : undefined, matchMap ? parseInt(matchMap) : undefined);
       setMatchMsg(`比赛已发起 #${res.id}，seed=${res.seed}`);
       setLiveMatchId(res.id);
       reload();
@@ -134,10 +134,10 @@ export default function ArenaPage() {
     <div className="shell">
       <div className="arena-shell frame" style={{ borderRadius: 28, maxWidth: 1100, margin: "0 auto" }}>
         {/* header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-          <div>
-            <p className="eyebrow">Agent Arena</p>
-            <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: "2.4rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <p className="eyebrow" style={{ margin: 0 }}>Agent Arena</p>
+            <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: "1.6rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
               竞技排行榜
             </h1>
           </div>
@@ -198,64 +198,46 @@ export default function ArenaPage() {
               return (<>
             {/* podium */}
             {top3.length >= 3 && (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 28, padding: "20px 0" }}>
-                <div style={{ textAlign: "center", marginBottom: 16 }}>
-                  <div style={{ fontSize: "0.92rem", color: "var(--gold)", fontWeight: 600, letterSpacing: "0.06em" }}>
-                    恭喜 <span style={{ fontSize: "1.1rem", fontWeight: 800, color: "#ffd700" }}>{top3[0].owner}</span> 的 <span style={{ fontSize: "1.1rem", fontWeight: 800, color: "#ffd700" }}>{top3[0].bot_name}</span> 强势登顶
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 12, padding: "10px 0" }}>
+                <div style={{ textAlign: "center", marginBottom: 8 }}>
+                  <div style={{ fontSize: "0.84rem", color: "var(--gold)", fontWeight: 600, letterSpacing: "0.06em" }}>
+                    恭喜 <span style={{ fontWeight: 800, color: "#ffd700" }}>{top3[0].owner}</span> 的 <span style={{ fontWeight: 800, color: "#ffd700" }}>{top3[0].bot_name}</span> 强势登顶
                   </div>
-                  <div style={{ fontSize: "0.74rem", color: "var(--muted)", marginTop: 4 }}>{top3[0].wins}胜{top3[0].losses}负 · 胜率{(top3[0].win_rate * 100).toFixed(0)}% · {top3[0].total}场</div>
+                  <div style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: 2 }}>{top3[0].wins}胜{top3[0].losses}负 · 胜率{(top3[0].win_rate * 100).toFixed(0)}% · {top3[0].total}场</div>
                 </div>
-                <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 16 }}>
+                <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 12 }}>
                 {/* 2nd place */}
-                <div style={{ textAlign: "center", width: 160 }}>
-                  <div style={{ fontSize: "2rem", marginBottom: 4 }}>🥈</div>
-                  <div style={{ background: "linear-gradient(180deg, rgba(192,192,192,0.12), rgba(192,192,192,0.04))", border: "1px solid rgba(192,192,192,0.25)", borderRadius: 16, padding: "16px 12px", height: 100, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                    <div style={{ fontSize: "1rem", fontWeight: 700, color: "#c0c0c0" }}>{top3[1].bot_name}</div>
-                    <div style={{ fontSize: "0.74rem", color: "var(--muted)", marginTop: 4 }}>{top3[1].owner}</div>
-                    <div style={{ fontSize: "0.82rem", marginTop: 6 }}>
-                      <span style={{ color: "var(--alpha)" }}>{top3[1].wins}胜</span>
-                      <span style={{ color: "var(--muted)", margin: "0 4px" }}>/</span>
-                      <span style={{ color: "var(--beta)" }}>{top3[1].losses}负</span>
-                    </div>
-                    <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: 2 }}>胜率 {(top3[1].win_rate * 100).toFixed(0)}% · 均分 {top3[1].avg_score.toFixed(0)}</div>
+                <div style={{ textAlign: "center", width: 130 }}>
+                  <div style={{ fontSize: "1.2rem" }}>🥈</div>
+                  <div style={{ background: "linear-gradient(180deg, rgba(192,192,192,0.12), rgba(192,192,192,0.04))", border: "1px solid rgba(192,192,192,0.25)", borderRadius: 12, padding: "8px 8px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                    <div style={{ fontSize: "0.86rem", fontWeight: 700, color: "#c0c0c0" }}>{top3[1].bot_name}</div>
+                    <div style={{ fontSize: "0.66rem", color: "var(--muted)", marginTop: 2 }}>{top3[1].owner} · {(top3[1].win_rate * 100).toFixed(0)}%</div>
                   </div>
                 </div>
                 {/* 1st place */}
-                <div style={{ textAlign: "center", width: 180 }}>
-                  <div style={{ fontSize: "2.4rem", marginBottom: 4 }}>🏆</div>
-                  <div style={{ background: "linear-gradient(180deg, rgba(255,215,0,0.15), rgba(255,215,0,0.04))", border: "1px solid rgba(255,215,0,0.35)", borderRadius: 16, padding: "20px 12px", height: 120, display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 0 24px rgba(255,215,0,0.08)" }}>
-                    <div style={{ fontSize: "1.2rem", fontWeight: 800, color: "#ffd700" }}>{top3[0].bot_name}</div>
-                    <div style={{ fontSize: "0.78rem", color: "var(--gold)", marginTop: 4 }}>{top3[0].owner}</div>
-                    <div style={{ fontSize: "0.88rem", marginTop: 8 }}>
-                      <span style={{ color: "var(--alpha)" }}>{top3[0].wins}胜</span>
-                      <span style={{ color: "var(--muted)", margin: "0 4px" }}>/</span>
-                      <span style={{ color: "var(--beta)" }}>{top3[0].losses}负</span>
-                    </div>
-                    <div style={{ fontSize: "0.76rem", color: "var(--gold)", marginTop: 2 }}>胜率 {(top3[0].win_rate * 100).toFixed(0)}% · 均分 {top3[0].avg_score.toFixed(0)}</div>
+                <div style={{ textAlign: "center", width: 150 }}>
+                  <div style={{ fontSize: "1.6rem" }}>🏆</div>
+                  <div style={{ background: "linear-gradient(180deg, rgba(255,215,0,0.15), rgba(255,215,0,0.04))", border: "1px solid rgba(255,215,0,0.35)", borderRadius: 12, padding: "10px 8px", boxShadow: "0 0 16px rgba(255,215,0,0.08)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                    <div style={{ fontSize: "1rem", fontWeight: 800, color: "#ffd700" }}>{top3[0].bot_name}</div>
+                    <div style={{ fontSize: "0.68rem", color: "var(--gold)", marginTop: 2 }}>{top3[0].owner} · {(top3[0].win_rate * 100).toFixed(0)}%</div>
                   </div>
                 </div>
                 {/* 3rd place */}
-                <div style={{ textAlign: "center", width: 150 }}>
-                  <div style={{ fontSize: "1.8rem", marginBottom: 4 }}>🥉</div>
-                  <div style={{ background: "linear-gradient(180deg, rgba(205,127,50,0.12), rgba(205,127,50,0.04))", border: "1px solid rgba(205,127,50,0.22)", borderRadius: 16, padding: "14px 12px", height: 90, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                    <div style={{ fontSize: "0.96rem", fontWeight: 700, color: "#cd7f32" }}>{top3[2].bot_name}</div>
-                    <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: 4 }}>{top3[2].owner}</div>
-                    <div style={{ fontSize: "0.8rem", marginTop: 6 }}>
-                      <span style={{ color: "var(--alpha)" }}>{top3[2].wins}胜</span>
-                      <span style={{ color: "var(--muted)", margin: "0 4px" }}>/</span>
-                      <span style={{ color: "var(--beta)" }}>{top3[2].losses}负</span>
-                    </div>
-                    <div style={{ fontSize: "0.7rem", color: "var(--muted)", marginTop: 2 }}>胜率 {(top3[2].win_rate * 100).toFixed(0)}% · 均分 {top3[2].avg_score.toFixed(0)}</div>
+                <div style={{ textAlign: "center", width: 120 }}>
+                  <div style={{ fontSize: "1.1rem" }}>🥉</div>
+                  <div style={{ background: "linear-gradient(180deg, rgba(205,127,50,0.12), rgba(205,127,50,0.04))", border: "1px solid rgba(205,127,50,0.22)", borderRadius: 12, padding: "8px 8px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "#cd7f32" }}>{top3[2].bot_name}</div>
+                    <div style={{ fontSize: "0.66rem", color: "var(--muted)", marginTop: 2 }}>{top3[2].owner} · {(top3[2].win_rate * 100).toFixed(0)}%</div>
                   </div>
                 </div>
               </div>
               </div>
             )}
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.92rem" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem" }}>
               <thead>
-                <tr style={{ color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.12em", fontSize: "0.72rem" }}>
-                  {["#", "Bot", "Owner", "胜", "负", "平", "场次", "胜率", "均分"].map((h) => (
-                    <th key={h} style={{ padding: "10px 14px", textAlign: "left", borderBottom: "1px solid var(--line)" }}>{h}</th>
+                <tr style={{ color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.12em", fontSize: "0.68rem" }}>
+                  {["#", "Bot", "Owner", "评分", "胜", "负", "平", "场次", "胜率", "均分"].map((h) => (
+                    <th key={h} style={{ padding: "6px 10px", textAlign: "left", borderBottom: "1px solid var(--line)" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -264,22 +246,23 @@ export default function ArenaPage() {
                   const rank = rankPage * RANK_PAGE_SIZE + i;
                   return (
                   <tr key={r.bot_id} style={{ borderBottom: "1px solid var(--line)" }}>
-                    <td style={{ padding: "12px 14px", color: rank === 0 ? "var(--gold)" : "var(--muted)" }}>{rank + 1}</td>
-                    <td style={{ padding: "12px 14px", fontWeight: 600 }}>{r.bot_name}</td>
-                    <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{r.owner}</td>
-                    <td style={{ padding: "12px 14px", color: "var(--alpha)" }}>{r.wins}</td>
-                    <td style={{ padding: "12px 14px", color: "var(--beta)" }}>{r.losses}</td>
-                    <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{r.draws}</td>
-                    <td style={{ padding: "12px 14px" }}>{r.total}</td>
-                    <td style={{ padding: "12px 14px" }}>
+                    <td style={{ padding: "6px 10px", color: rank === 0 ? "var(--gold)" : "var(--muted)" }}>{rank + 1}</td>
+                    <td style={{ padding: "6px 10px", fontWeight: 600 }}>{r.bot_name}</td>
+                    <td style={{ padding: "6px 10px", color: "var(--muted)" }}>{r.owner}</td>
+                    <td style={{ padding: "6px 10px", color: "var(--gold)", fontWeight: 700 }}>{(r.rating ?? 0).toFixed(1)}</td>
+                    <td style={{ padding: "6px 10px", color: "var(--alpha)" }}>{r.wins}</td>
+                    <td style={{ padding: "6px 10px", color: "var(--beta)" }}>{r.losses}</td>
+                    <td style={{ padding: "6px 10px", color: "var(--muted)" }}>{r.draws}</td>
+                    <td style={{ padding: "6px 10px" }}>{r.total}</td>
+                    <td style={{ padding: "6px 10px" }}>
                       <WinBar rate={r.win_rate} />
                     </td>
-                    <td style={{ padding: "12px 14px" }}>{r.avg_score.toFixed(0)}</td>
+                    <td style={{ padding: "6px 10px" }}>{r.avg_score.toFixed(0)}</td>
                   </tr>
                   );
                 })}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={9} style={{ padding: 24, color: "var(--muted)", textAlign: "center" }}>暂无数据，先注册 bot 并发起比赛</td></tr>
+                  <tr><td colSpan={10} style={{ padding: 24, color: "var(--muted)", textAlign: "center" }}>暂无数据，先注册 bot 并发起比赛</td></tr>
                 )}
               </tbody>
             </table>
@@ -376,7 +359,7 @@ export default function ArenaPage() {
                 <select value={matchMap} onChange={(e) => setMatchMap(e.target.value)} style={selectStyle}>
                   <option value="">随机地图</option>
                   {maps.map((m) => (
-                    <option key={m.path} value={m.path}>{m.name}</option>
+                    <option key={m.id} value={String(m.id)}>{m.name}</option>
                   ))}
                 </select>
               </label>
@@ -434,7 +417,7 @@ export default function ArenaPage() {
 
             <div style={{ marginTop: 32 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <p className="eyebrow" style={{ margin: 0 }}>比赛历史</p>
+                <p className="eyebrow" style={{ margin: 0 }}>比赛历史 · {matches.length}场</p>
                 {matches.length > 0 && adminToken && (
                   <button
                     onClick={handleClearMatches}
@@ -444,10 +427,38 @@ export default function ArenaPage() {
                   </button>
                 )}
               </div>
+              {(() => {
+                const matchTabPage = matchPage;
+                const pagedMatches = matches.slice(matchTabPage * MATCH_PAGE_SIZE, (matchTabPage + 1) * MATCH_PAGE_SIZE);
+                const totalPages = Math.ceil(matches.length / MATCH_PAGE_SIZE);
+                return (<>
               <div style={{ display: "grid", gap: 10 }}>
-                {matches.map((m) => <MatchRow key={m.id} match={m} onDelete={handleDeleteMatch} isAdmin={!!adminToken} />)}
+                {pagedMatches.map((m) => <MatchRow key={m.id} match={m} onDelete={handleDeleteMatch} isAdmin={!!adminToken} />)}
                 {matches.length === 0 && <p style={{ color: "var(--muted)" }}>暂无比赛记录</p>}
               </div>
+              {totalPages > 1 && (
+                <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 14 }}>
+                  <button
+                    disabled={matchTabPage === 0}
+                    onClick={() => setMatchPage(p => p - 1)}
+                    style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: matchTabPage === 0 ? "var(--muted)" : "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", cursor: matchTabPage === 0 ? "default" : "pointer", opacity: matchTabPage === 0 ? 0.4 : 1 }}
+                  >
+                    上一页
+                  </button>
+                  <span style={{ color: "var(--muted)", fontSize: "0.8rem", lineHeight: "28px" }}>
+                    {matchTabPage + 1} / {totalPages}
+                  </span>
+                  <button
+                    disabled={(matchTabPage + 1) >= totalPages}
+                    onClick={() => setMatchPage(p => p + 1)}
+                    style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: (matchTabPage + 1) >= totalPages ? "var(--muted)" : "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", cursor: (matchTabPage + 1) >= totalPages ? "default" : "pointer", opacity: (matchTabPage + 1) >= totalPages ? 0.4 : 1 }}
+                  >
+                    下一页
+                  </button>
+                </div>
+              )}
+              </>);
+              })()}
             </div>
           </div>
         )}

@@ -268,14 +268,22 @@ input {
 
 .content-grid {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   align-items: stretch;
 }
 
+.content-grid.expanded {
+  grid-template-columns: 220px minmax(0, 1fr) 220px;
+}
+
 .side-column {
+  display: none;
+  gap: 14px;
+}
+
+.content-grid.expanded .side-column {
   display: grid;
-  gap: 18px;
 }
 
 .side-card {
@@ -786,7 +794,7 @@ input {
 
 .canvas-shell canvas {
   display: block;
-  width: min(100%, 68vh, 940px);
+  width: min(100%, 80vh, 1200px);
   max-width: 100%;
   height: auto;
   border-radius: 18px;

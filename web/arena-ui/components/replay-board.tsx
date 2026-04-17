@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 
-import type { ReplayData, ReplayFrame, RobotState, Tile } from "@/lib/replay";
+import type { ReplayData, ReplayEvent, ReplayFrame, RobotState, Tile } from "@/lib/replay";
 
 type MatchInfo = { botA: string; botB: string; id: number; mapPath?: string | null };
 
@@ -43,6 +43,9 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showResult, setShowResult] = useState(false);
   const [canvasDisplaySize, setCanvasDisplaySize] = useState<number | null>(null);
+  const [showPanels, setShowPanels] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const fullscreenRef = useRef<HTMLDivElement | null>(null);
   const deferredFrameIndex = useDeferredValue(frameIndex);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasShellRef = useRef<HTMLDivElement | null>(null);
@@ -76,7 +79,25 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
     drawTiles(context, frame.tiles, replay.width, replay.height);
     drawGrid(context, replay.width, replay.height);
     drawRobots(context, frame.robots);
+    drawEventOverlays(context, frame.robots, frame.events);
   }, [frame, replay.height, replay.width]);
+
+  // fullscreen toggle + ESC listener
+  const toggleFullscreen = () => {
+    const el = fullscreenRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
 
   useEffect(() => {
     const shell = canvasShellRef.current;
@@ -274,7 +295,7 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
           </div>
         </section>
 
-        <section className="content-grid">
+        <section className={`content-grid${showPanels ? " expanded" : ""}`}>
           <aside className="side-column">
             <div className="side-card frame">
               <h2>战局监控</h2>
@@ -391,15 +412,63 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
               <div className="map-pill-row">
                 <span className="map-pill alpha">蓝方得分 {frame.scores[0]}</span>
                 <span className="map-pill beta">红方得分 {frame.scores[1]}</span>
+                <button
+                  onClick={() => setShowPanels(p => !p)}
+                  style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--muted)", fontSize: "0.72rem", padding: "2px 10px", cursor: "pointer", marginLeft: 8 }}
+                >
+                  {showPanels ? "收起面板" : "展开面板"}
+                </button>
               </div>
             </div>
 
-            <div className="canvas-shell" ref={canvasShellRef}>
+            <div ref={fullscreenRef} style={isFullscreen ? { background: "#040b14", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", width: "100%", height: "100%" } : undefined}>
+            <div className="canvas-shell" ref={canvasShellRef} style={{ position: "relative" }}>
+              <div style={{ position: "absolute", top: 8, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 12, zIndex: 10, pointerEvents: "none" }}>
+                <span style={{ background: "rgba(25,225,255,0.15)", border: "1px solid rgba(25,225,255,0.4)", borderRadius: 8, padding: "4px 14px", fontSize: "0.88rem", fontWeight: 700, color: "#19e1ff", backdropFilter: "blur(6px)" }}>
+                  {botAName || "蓝方"} {frame.scores[0]}
+                </span>
+                <span style={{ color: "var(--muted)", fontSize: "0.78rem", alignSelf: "center" }}>回合 {frame.turn}/500</span>
+                <span style={{ background: "rgba(255,79,109,0.15)", border: "1px solid rgba(255,79,109,0.4)", borderRadius: 8, padding: "4px 14px", fontSize: "0.88rem", fontWeight: 700, color: "#ff4f6d", backdropFilter: "blur(6px)" }}>
+                  {botBName || "红方"} {frame.scores[1]}
+                </span>
+              </div>
+              {/* fullscreen button */}
+              <button
+                onClick={toggleFullscreen}
+                style={{ position: "absolute", top: 8, right: 12, zIndex: 10, background: "rgba(0,0,0,0.5)", border: "1px solid var(--line-strong)", borderRadius: 6, color: "var(--muted)", fontSize: "0.7rem", padding: "3px 8px", cursor: "pointer", backdropFilter: "blur(4px)" }}
+              >
+                {isFullscreen ? "退出全屏" : "全屏"}
+              </button>
               <canvas
                 ref={canvasRef}
                 aria-label="Arena replay map"
-                style={canvasDisplaySize ? { width: canvasDisplaySize, height: "auto" } : undefined}
+                style={isFullscreen
+                  ? { width: "auto", height: "calc(100vh - 80px)", maxWidth: "100vw" }
+                  : canvasDisplaySize ? { width: canvasDisplaySize, height: "auto" } : undefined}
               />
+            </div>
+            {/* fullscreen playback controls */}
+            {isFullscreen && (
+              <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 12 }}>
+                <button onClick={() => setIsPlaying(p => !p)} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", cursor: "pointer" }}>
+                  {isPlaying ? "暂停" : "播放"}
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={replay.frames.length - 1}
+                  value={frameIndex}
+                  onChange={e => { setFrameIndex(Number(e.target.value)); setIsPlaying(false); }}
+                  style={{ width: 300, accentColor: "var(--alpha)" }}
+                />
+                <select value={playbackSpeed} onChange={e => setPlaybackSpeed(Number(e.target.value))} style={{ background: "#0a1727", border: "1px solid var(--line-strong)", borderRadius: 6, color: "var(--muted)", fontSize: "0.76rem", padding: "2px 8px" }}>
+                  <option value={0.5}>0.5x</option>
+                  <option value={1}>1x</option>
+                  <option value={2}>2x</option>
+                  <option value={4}>4x</option>
+                </select>
+              </div>
+            )}
             </div>
           </section>
 
@@ -729,52 +798,51 @@ function drawCabinetTile(
   const fillRatio = capacity === 0 ? 0 : occupied / capacity;
   const meterColor = cabinetBatteryColorByRatio(fillRatio);
 
-  context.fillStyle = "rgba(255, 214, 107, 0.05)";
-  context.fillRect(px + 2, py + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+  // subtle background tint
+  context.fillStyle = "rgba(255, 214, 107, 0.08)";
+  context.fillRect(px, py, TILE_SIZE, TILE_SIZE);
 
-  context.fillStyle = "#09111a";
-  roundRect(context, px + 4, py + 5, TILE_SIZE - 9, TILE_SIZE - 10, 3);
-  context.fill();
-  context.strokeStyle = "rgba(196, 210, 228, 0.82)";
-  context.lineWidth = 1;
-  roundRect(context, px + 4.5, py + 5.5, TILE_SIZE - 10, TILE_SIZE - 11, 3);
+  // outer border — golden, clean
+  context.strokeStyle = "rgba(255, 200, 80, 0.7)";
+  context.lineWidth = 1.2;
+  roundRect(context, px + 2.5, py + 2.5, TILE_SIZE - 5, TILE_SIZE - 5, 3);
   context.stroke();
 
-  context.fillStyle = "rgba(220, 230, 242, 0.72)";
-  roundRect(context, px + TILE_SIZE - 4.5, py + 9, 2.5, TILE_SIZE - 18, 1.1);
-  context.fill();
+  // meter bar — full width inside the border, bottom-up fill
+  const barX = px + 4;
+  const barY = py + 4;
+  const barW = TILE_SIZE - 8;
+  const barH = TILE_SIZE - 8;
 
+  // meter background
   context.fillStyle = "rgba(255,255,255,0.06)";
-  context.fillRect(px + 6, py + 7, TILE_SIZE - 15, TILE_SIZE - 14);
-  context.fillStyle = meterColor;
-  context.fillRect(
-    px + 6,
-    py + 7 + (TILE_SIZE - 14) * (1 - fillRatio),
-    TILE_SIZE - 15,
-    (TILE_SIZE - 14) * fillRatio,
-  );
+  context.fillRect(barX, barY, barW, barH);
 
-  context.strokeStyle = "rgba(255,255,255,0.22)";
-  context.lineWidth = 0.7;
-  for (let index = 1; index <= 3; index += 1) {
-    const y = py + 7 + ((TILE_SIZE - 14) / 4) * index;
-    context.beginPath();
-    context.moveTo(px + 6.5, y);
-    context.lineTo(px + TILE_SIZE - 9.5, y);
-    context.stroke();
+  // meter fill from bottom
+  if (fillRatio > 0) {
+    context.fillStyle = meterColor;
+    const fillH = barH * fillRatio;
+    context.fillRect(barX, barY + barH - fillH, barW, fillH);
   }
 
-  context.fillStyle = "rgba(255,255,255,0.28)";
-  context.beginPath();
-  context.moveTo(px + TILE_SIZE / 2 - 1, py + 9);
-  context.lineTo(px + TILE_SIZE / 2 + 1.5, py + 9);
-  context.lineTo(px + TILE_SIZE / 2 - 0.7, py + 12);
-  context.lineTo(px + TILE_SIZE / 2 + 1.2, py + 12);
-  context.lineTo(px + TILE_SIZE / 2 - 2.1, py + 16);
-  context.lineTo(px + TILE_SIZE / 2 - 0.5, py + 13.4);
-  context.lineTo(px + TILE_SIZE / 2 - 2.2, py + 13.4);
-  context.closePath();
-  context.fill();
+  // percentage text — only show when > 0
+  if (fillRatio > 0) {
+    const pct = Math.round(fillRatio * 100);
+    context.fillStyle = "#fff";
+    context.font = "700 7px sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(`${pct}`, px + TILE_SIZE / 2, py + TILE_SIZE / 2);
+    context.textBaseline = "alphabetic";
+  } else {
+    // empty cabinet — small icon
+    context.fillStyle = "rgba(255, 200, 80, 0.5)";
+    context.font = "700 8px sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText("\u26A1", px + TILE_SIZE / 2, py + TILE_SIZE / 2);
+    context.textBaseline = "alphabetic";
+  }
 }
 
 function drawArrow(
@@ -863,6 +931,50 @@ function drawRobots(context: CanvasRenderingContext2D, robots: RobotState[]) {
     context.font = "700 10px var(--font-body)";
     context.textAlign = "center";
     context.fillText(String(robot.id), px + TILE_SIZE / 2, py + TILE_SIZE / 2 + 6);
+  }
+}
+
+/** Draw overlays for real events: "拾取了 X 点能量" and "向机架 X 投递了 Y 点能量" */
+function drawEventOverlays(
+  context: CanvasRenderingContext2D,
+  robots: RobotState[],
+  events: ReplayEvent[],
+) {
+  if (!events || events.length === 0) return;
+  const robotMap = new Map<number, RobotState>();
+  for (const r of robots) robotMap.set(r.id, r);
+
+  for (const evt of events) {
+    const robot = robotMap.get(evt.robot_id);
+    if (!robot) continue;
+
+    const isPick = evt.description.includes("拾取");
+    const isDrop = evt.description.includes("投递");
+    if (!isPick && !isDrop) continue;
+
+    // extract the number from the description
+    const numMatch = evt.description.match(/(\d+)\s*点/);
+    const amount = numMatch ? numMatch[1] : "";
+
+    const px = robot.position.x * TILE_SIZE;
+    const py = robot.position.y * TILE_SIZE;
+    const color = isDrop ? "#ffd66b" : "#4dff88";
+
+    // glow on the tile
+    context.fillStyle = isDrop ? "rgba(255, 214, 107, 0.3)" : "rgba(77, 255, 136, 0.25)";
+    context.fillRect(px - 1, py - 1, TILE_SIZE + 2, TILE_SIZE + 2);
+
+    // border
+    context.strokeStyle = color;
+    context.lineWidth = 1.5;
+    context.strokeRect(px - 0.5, py - 0.5, TILE_SIZE + 1, TILE_SIZE + 1);
+
+    // floating label above the robot: "+42" or "存69"
+    const label = isDrop ? `存${amount}` : `+${amount}`;
+    context.fillStyle = color;
+    context.font = "700 8px sans-serif";
+    context.textAlign = "center";
+    context.fillText(label, px + TILE_SIZE / 2, py - 3);
   }
 }
 
@@ -979,13 +1091,9 @@ function cabinetBatteryColor(cabinet: CabinetStatus) {
 }
 
 function cabinetBatteryColorByRatio(ratio: number) {
-  if (ratio >= 0.85) {
-    return "linear-gradient(180deg, #ff2454, #ff6f8d)";
-  }
-  if (ratio >= 0.45) {
-    return "linear-gradient(180deg, #ffe23a, #ff9800)";
-  }
-  return "linear-gradient(180deg, #7dff5c, #2bff88)";
+  if (ratio >= 0.85) return "#ff4466";
+  if (ratio >= 0.45) return "#ffcc33";
+  return "#55ff77";
 }
 
 function roundRect(

@@ -198,52 +198,51 @@ export function drawCabinetTile(
   const fillRatio = capacity === 0 ? 0 : occupied / capacity;
   const meterColor = cabinetBatteryColorByRatio(fillRatio);
 
-  context.fillStyle = "rgba(255, 214, 107, 0.05)";
-  context.fillRect(px + 2, py + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+  // subtle background tint
+  context.fillStyle = "rgba(255, 214, 107, 0.08)";
+  context.fillRect(px, py, TILE_SIZE, TILE_SIZE);
 
-  context.fillStyle = "#09111a";
-  roundRect(context, px + 4, py + 5, TILE_SIZE - 9, TILE_SIZE - 10, 3);
-  context.fill();
-  context.strokeStyle = "rgba(196, 210, 228, 0.82)";
-  context.lineWidth = 1;
-  roundRect(context, px + 4.5, py + 5.5, TILE_SIZE - 10, TILE_SIZE - 11, 3);
+  // outer border — golden, clean
+  context.strokeStyle = "rgba(255, 200, 80, 0.7)";
+  context.lineWidth = 1.2;
+  roundRect(context, px + 2.5, py + 2.5, TILE_SIZE - 5, TILE_SIZE - 5, 3);
   context.stroke();
 
-  context.fillStyle = "rgba(220, 230, 242, 0.72)";
-  roundRect(context, px + TILE_SIZE - 4.5, py + 9, 2.5, TILE_SIZE - 18, 1.1);
-  context.fill();
+  // meter bar — full width inside the border, bottom-up fill
+  const barX = px + 4;
+  const barY = py + 4;
+  const barW = TILE_SIZE - 8;
+  const barH = TILE_SIZE - 8;
 
+  // meter background
   context.fillStyle = "rgba(255,255,255,0.06)";
-  context.fillRect(px + 6, py + 7, TILE_SIZE - 15, TILE_SIZE - 14);
-  context.fillStyle = meterColor;
-  context.fillRect(
-    px + 6,
-    py + 7 + (TILE_SIZE - 14) * (1 - fillRatio),
-    TILE_SIZE - 15,
-    (TILE_SIZE - 14) * fillRatio,
-  );
+  context.fillRect(barX, barY, barW, barH);
 
-  context.strokeStyle = "rgba(255,255,255,0.22)";
-  context.lineWidth = 0.7;
-  for (let index = 1; index <= 3; index += 1) {
-    const y = py + 7 + ((TILE_SIZE - 14) / 4) * index;
-    context.beginPath();
-    context.moveTo(px + 6.5, y);
-    context.lineTo(px + TILE_SIZE - 9.5, y);
-    context.stroke();
+  // meter fill from bottom
+  if (fillRatio > 0) {
+    context.fillStyle = meterColor;
+    const fillH = barH * fillRatio;
+    context.fillRect(barX, barY + barH - fillH, barW, fillH);
   }
 
-  context.fillStyle = "rgba(255,255,255,0.28)";
-  context.beginPath();
-  context.moveTo(px + TILE_SIZE / 2 - 1, py + 9);
-  context.lineTo(px + TILE_SIZE / 2 + 1.5, py + 9);
-  context.lineTo(px + TILE_SIZE / 2 - 0.7, py + 12);
-  context.lineTo(px + TILE_SIZE / 2 + 1.2, py + 12);
-  context.lineTo(px + TILE_SIZE / 2 - 2.1, py + 16);
-  context.lineTo(px + TILE_SIZE / 2 - 0.5, py + 13.4);
-  context.lineTo(px + TILE_SIZE / 2 - 2.2, py + 13.4);
-  context.closePath();
-  context.fill();
+  // percentage text — only show when > 0
+  if (fillRatio > 0) {
+    const pct = Math.round(fillRatio * 100);
+    context.fillStyle = "#fff";
+    context.font = "700 7px sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(`${pct}`, px + TILE_SIZE / 2, py + TILE_SIZE / 2);
+    context.textBaseline = "alphabetic";
+  } else {
+    // empty cabinet — small icon
+    context.fillStyle = "rgba(255, 200, 80, 0.5)";
+    context.font = "700 8px sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText("\u26A1", px + TILE_SIZE / 2, py + TILE_SIZE / 2);
+    context.textBaseline = "alphabetic";
+  }
 }
 
 export function drawArrow(
@@ -316,9 +315,9 @@ export function drawSpawns(
 }
 
 function cabinetBatteryColorByRatio(ratio: number) {
-  if (ratio >= 0.85) return "linear-gradient(180deg, #ff2454, #ff6f8d)";
-  if (ratio >= 0.45) return "linear-gradient(180deg, #ffe23a, #ff9800)";
-  return "linear-gradient(180deg, #7dff5c, #2bff88)";
+  if (ratio >= 0.85) return "#ff4466";
+  if (ratio >= 0.45) return "#ffcc33";
+  return "#55ff77";
 }
 
 function roundRect(

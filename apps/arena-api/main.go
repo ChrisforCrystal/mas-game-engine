@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"path/filepath"
@@ -143,7 +145,10 @@ func main() {
 	mux.HandleFunc("DELETE /matches", handleClearMatches)
 	mux.HandleFunc("GET /rankings", handleRankings)
 	mux.HandleFunc("GET /maps", handleListMaps)
-	mux.HandleFunc("GET /maps/{name}", handleGetMap)
+	mux.HandleFunc("POST /maps", handleCreateMap)
+	mux.HandleFunc("GET /maps/{id}", handleGetMap)
+	mux.HandleFunc("PUT /maps/{id}", handleUpdateMap)
+	mux.HandleFunc("DELETE /maps/{id}", handleDeleteMap)
 	mux.HandleFunc("GET /replays", handleListReplays)
 	mux.HandleFunc("GET /replays/{name}", handleGetReplay)
 	mux.HandleFunc("GET /matches/{id}/live", handleMatchLive)
@@ -186,6 +191,65 @@ func initDB() {
 	db.Exec(`ALTER TABLE matches ADD COLUMN map_path TEXT`)
 	db.Exec(`ALTER TABLE matches ADD COLUMN latency_a INTEGER`)
 	db.Exec(`ALTER TABLE matches ADD COLUMN latency_b INTEGER`)
+
+	// maps table
+	db.Exec(`CREATE TABLE IF NOT EXISTS maps (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		name        TEXT NOT NULL,
+		description TEXT DEFAULT '',
+		layout      TEXT NOT NULL,
+		cabinets    TEXT DEFAULT '{}',
+		created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`)
+
+	// clean up zombie matches left from previous crash/restart
+	res, _ := db.Exec(`UPDATE matches SET status='error', finished_at=CURRENT_TIMESTAMP WHERE status='running'`)
+	if n, _ := res.RowsAffected(); n > 0 {
+		log.Printf("cleaned up %d zombie running matches", n)
+	}
+
+	// import maps from filesystem into DB (skip if name already exists)
+	importMapsFromDisk()
+}
+
+func importMapsFromDisk() {
+	dir := mapsDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var v struct {
+			Name        string          `json:"name"`
+			Description string          `json:"description"`
+			Layout      json.RawMessage `json:"layout"`
+			Cabinets    json.RawMessage `json:"cabinets"`
+		}
+		if json.Unmarshal(data, &v) != nil || v.Name == "" {
+			continue
+		}
+		// skip if already imported
+		var count int
+		db.QueryRow(`SELECT COUNT(*) FROM maps WHERE name=?`, v.Name).Scan(&count)
+		if count > 0 {
+			continue
+		}
+		layoutStr := string(v.Layout)
+		cabinetsStr := "{}"
+		if len(v.Cabinets) > 0 {
+			cabinetsStr = string(v.Cabinets)
+		}
+		db.Exec(`INSERT INTO maps (name, description, layout, cabinets) VALUES (?, ?, ?, ?)`,
+			v.Name, v.Description, layoutStr, cabinetsStr)
+		log.Printf("imported map: %s", v.Name)
+	}
 }
 
 // pingBot sends a GET to bot's /health and returns latency in ms, or error
@@ -343,6 +407,7 @@ func handleStartMatch(w http.ResponseWriter, r *http.Request) {
 		BotBID  int64  `json:"bot_b_id"`
 		Seed    int64  `json:"seed"`
 		MapPath string `json:"map_path"`
+		MapID   int64  `json:"map_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[match] start failed: invalid request body")
@@ -386,14 +451,58 @@ func handleStartMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// concurrency limit: each bot can participate in at most 3 running matches
+	const maxConcurrent = 3
+	var runningA, runningB int
+	db.QueryRow(`SELECT COUNT(*) FROM matches WHERE status='running' AND (bot_a_id=? OR bot_b_id=?)`, req.BotAID, req.BotAID).Scan(&runningA)
+	db.QueryRow(`SELECT COUNT(*) FROM matches WHERE status='running' AND (bot_a_id=? OR bot_b_id=?)`, req.BotBID, req.BotBID).Scan(&runningB)
+	if runningA >= maxConcurrent {
+		writeErr(w, 429, fmt.Sprintf("%s 正在进行 %d 场比赛，最多同时 %d 场，请稍后再试", botAName, runningA, maxConcurrent))
+		return
+	}
+	if runningB >= maxConcurrent {
+		writeErr(w, 429, fmt.Sprintf("%s 正在进行 %d 场比赛，最多同时 %d 场，请稍后再试", botBName, runningB, maxConcurrent))
+		return
+	}
+
+	// prevent self-play
+	if req.BotAID == req.BotBID {
+		writeErr(w, 400, "不能自己跟自己打")
+		return
+	}
+
 	seed := req.Seed
 	if seed == 0 {
 		seed = time.Now().UnixNano() % 1_000_000
 	}
 
+	// resolve map: prefer map_id (DB), fallback to map_path (legacy file)
+	mapLabel := req.MapPath // for display/storage
+	runnerMapPath := req.MapPath
+	if req.MapID > 0 {
+		var name, layout, cabinets string
+		err := db.QueryRow(`SELECT name, layout, cabinets FROM maps WHERE id=?`, req.MapID).
+			Scan(&name, &layout, &cabinets)
+		if err != nil {
+			writeErr(w, 404, "地图不存在")
+			return
+		}
+		// write temp file for the runner
+		tmpFile, err := os.CreateTemp("", "arena-map-*.json")
+		if err != nil {
+			writeErr(w, 500, "创建临时地图文件失败")
+			return
+		}
+		fmt.Fprintf(tmpFile, `{"name":%s,"layout":%s,"cabinets":%s}`,
+			mustJSON(name), layout, cabinets)
+		tmpFile.Close()
+		runnerMapPath = tmpFile.Name()
+		mapLabel = fmt.Sprintf("db:%d:%s", req.MapID, name)
+	}
+
 	var mapPathPtr *string
-	if req.MapPath != "" {
-		mapPathPtr = &req.MapPath
+	if mapLabel != "" {
+		mapPathPtr = &mapLabel
 	}
 
 	res, err := db.Exec(
@@ -408,9 +517,9 @@ func handleStartMatch(w http.ResponseWriter, r *http.Request) {
 	matchID, _ := res.LastInsertId()
 
 	log.Printf("[match %d] started: %s(%s, %dms) vs %s(%s, %dms) seed=%d map=%s",
-		matchID, botAName, botAURL, latA, botBName, botBURL, latB, seed, req.MapPath)
+		matchID, botAName, botAURL, latA, botBName, botBURL, latB, seed, mapLabel)
 
-	go runMatch(matchID, botAURL, botBURL, seed, req.MapPath)
+	go runMatch(matchID, botAURL, botBURL, seed, runnerMapPath)
 
 	writeJSON(w, 202, map[string]any{"id": matchID, "seed": seed, "status": "running", "latency_a": latA, "latency_b": latB})
 }
@@ -589,7 +698,7 @@ func handleListMatches(w http.ResponseWriter, r *http.Request) {
 		FROM matches m
 		JOIN bots ba ON ba.id = m.bot_a_id
 		JOIN bots bb ON bb.id = m.bot_b_id
-		ORDER BY m.id DESC LIMIT 100
+		ORDER BY m.id DESC
 	`)
 	if err != nil {
 		writeErr(w, 500, err.Error())
@@ -681,6 +790,7 @@ func handleClearMatches(w http.ResponseWriter, r *http.Request) {
 // ── GET /maps ─────────────────────────────────────────────────────────────────
 
 type MapInfo struct {
+	ID          int64  `json:"id"`
 	Path        string `json:"path"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -705,38 +815,48 @@ func mapsDir() string {
 }
 
 func handleListMaps(w http.ResponseWriter, r *http.Request) {
-	mapsDir := mapsDir()
-	entries, err := os.ReadDir(mapsDir)
+	rows, err := db.Query(`SELECT id, name, description FROM maps ORDER BY id`)
 	if err != nil {
 		writeJSON(w, 200, []MapInfo{})
 		return
 	}
+	defer rows.Close()
 	maps := []MapInfo{}
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		path := filepath.Join(mapsDir, e.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		var v struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
-		}
-		json.Unmarshal(data, &v)
-		maps = append(maps, MapInfo{Path: filepath.Join("maps", e.Name()), Name: v.Name, Description: v.Description})
+	for rows.Next() {
+		var m MapInfo
+		rows.Scan(&m.ID, &m.Name, &m.Description)
+		maps = append(maps, m)
 	}
 	writeJSON(w, 200, maps)
 }
 
-// ── GET /maps/{name} ─────────────────────────────────────────────────────────
+// ── GET /maps/{id} ──────────────────────────────────────────────────────────
 
 func handleGetMap(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		// fallback: try as filename for backward compat
+		handleGetMapByName(w, r, idStr)
+		return
+	}
+	var name, description, layout, cabinets string
+	err = db.QueryRow(`SELECT name, description, layout, cabinets FROM maps WHERE id=?`, id).
+		Scan(&name, &description, &layout, &cabinets)
+	if err != nil {
+		writeErr(w, 404, "map not found")
+		return
+	}
+	// return same format as the old JSON files
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	fmt.Fprintf(w, `{"name":%s,"description":%s,"layout":%s,"cabinets":%s}`,
+		mustJSON(name), mustJSON(description), layout, cabinets)
+}
+
+func handleGetMapByName(w http.ResponseWriter, r *http.Request, name string) {
+	// backward compat: try reading from filesystem
 	path := filepath.Join(mapsDir(), name)
-	// safety: prevent path traversal
 	if filepath.Dir(path) != mapsDir() {
 		writeErr(w, 400, "invalid map name")
 		return
@@ -751,6 +871,100 @@ func handleGetMap(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+func mustJSON(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+// ── POST /maps (admin) ──────────────────────────────────────────────────────
+
+func handleCreateMap(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	var req struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Layout      json.RawMessage `json:"layout"`
+		Cabinets    json.RawMessage `json:"cabinets"`
+	}
+	if json.NewDecoder(r.Body).Decode(&req) != nil || req.Name == "" {
+		writeErr(w, 400, "name and layout are required")
+		return
+	}
+	layoutStr := string(req.Layout)
+	if layoutStr == "" || layoutStr == "null" {
+		writeErr(w, 400, "layout is required")
+		return
+	}
+	cabinetsStr := "{}"
+	if len(req.Cabinets) > 0 && string(req.Cabinets) != "null" {
+		cabinetsStr = string(req.Cabinets)
+	}
+	res, err := db.Exec(`INSERT INTO maps (name, description, layout, cabinets) VALUES (?, ?, ?, ?)`,
+		req.Name, req.Description, layoutStr, cabinetsStr)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	id, _ := res.LastInsertId()
+	writeJSON(w, 201, map[string]any{"id": id, "name": req.Name})
+}
+
+// ── PUT /maps/{id} (admin) ──────────────────────────────────────────────────
+
+func handleUpdateMap(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, 400, "invalid id")
+		return
+	}
+	var req struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Layout      json.RawMessage `json:"layout"`
+		Cabinets    json.RawMessage `json:"cabinets"`
+	}
+	if json.NewDecoder(r.Body).Decode(&req) != nil {
+		writeErr(w, 400, "invalid request body")
+		return
+	}
+	layoutStr := string(req.Layout)
+	cabinetsStr := string(req.Cabinets)
+	if cabinetsStr == "" || cabinetsStr == "null" {
+		cabinetsStr = "{}"
+	}
+	_, err = db.Exec(`UPDATE maps SET name=?, description=?, layout=?, cabinets=? WHERE id=?`,
+		req.Name, req.Description, layoutStr, cabinetsStr, id)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+// ── DELETE /maps/{id} (admin) ────────────────────────────────────────────────
+
+func handleDeleteMap(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, 400, "invalid id")
+		return
+	}
+	_, err = db.Exec(`DELETE FROM maps WHERE id=?`, id)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
 // ── GET /rankings ─────────────────────────────────────────────────────────────
 
 type Ranking struct {
@@ -763,6 +977,21 @@ type Ranking struct {
 	Total    int     `json:"total"`
 	WinRate  float64 `json:"win_rate"`
 	AvgScore float64 `json:"avg_score"`
+	Rating   float64 `json:"rating"`
+}
+
+// wilsonLower computes the Wilson score lower bound (95% confidence).
+// This naturally penalizes bots with few matches and rewards consistent winners.
+// Rating = wilson(win_rate, total) * 70 + normalized_avg_score * 30
+func wilsonLower(wins, total int) float64 {
+	if total == 0 {
+		return 0
+	}
+	n := float64(total)
+	p := float64(wins) / n
+	z := 1.96 // 95% confidence
+	z2 := z * z
+	return (p + z2/(2*n) - z*math.Sqrt((p*(1-p)+z2/(4*n))/n)) / (1 + z2/n)
 }
 
 func handleRankings(w http.ResponseWriter, r *http.Request) {
@@ -781,7 +1010,6 @@ func handleRankings(w http.ResponseWriter, r *http.Request) {
 		FROM bots b
 		LEFT JOIN matches m ON (m.bot_a_id = b.id OR m.bot_b_id = b.id) AND m.status = 'done'
 		GROUP BY b.id
-		ORDER BY wins DESC, avg_score DESC
 	`)
 	if err != nil {
 		writeErr(w, 500, err.Error())
@@ -789,6 +1017,7 @@ func handleRankings(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	rankings := []Ranking{}
+	var maxAvg float64
 	for rows.Next() {
 		var rk Ranking
 		var avgScore sql.NullFloat64
@@ -800,8 +1029,25 @@ func handleRankings(w http.ResponseWriter, r *http.Request) {
 		if rk.Total > 0 {
 			rk.WinRate = float64(rk.Wins) / float64(rk.Total)
 		}
+		if rk.AvgScore > maxAvg {
+			maxAvg = rk.AvgScore
+		}
 		rankings = append(rankings, rk)
 	}
+	// compute composite rating: wilson * 70 + normalized_avg_score * 30
+	for i := range rankings {
+		rk := &rankings[i]
+		wilson := wilsonLower(rk.Wins, rk.Total)
+		normScore := 0.0
+		if maxAvg > 0 {
+			normScore = rk.AvgScore / maxAvg
+		}
+		rk.Rating = wilson*70 + normScore*30
+	}
+	// sort by rating descending
+	sort.Slice(rankings, func(i, j int) bool {
+		return rankings[i].Rating > rankings[j].Rating
+	})
 	writeJSON(w, 200, rankings)
 }
 

@@ -6569,3 +6569,18 @@ Done  winner=Draw  alpha=0  beta=0  replay=./artifacts/replays/match-800000-1776
 2026/04/17 15:28:24 [match 106] stderr: --- finish done (2ms) ---
 2026/04/17 15:28:24 [match 106] stderr: === http-match end (973ms total) winner=Alpha score=50:0 ===
 2026/04/17 15:28:24 [match 106] DONE in 986.562708ms: winner=Alpha score=50-0 replay=./artifacts/replays/match-826000-1776410903748.json
+2026/04/18 03:05:23 data dir: .
+2026/04/18 03:05:23 ARENA_ADMIN_TOKEN not set, using default token
+2026/04/18 03:05:23 cleaned up 1 zombie running matches
+2026/04/18 03:05:23 imported map: 标准走廊（新手图）
+2026/04/18 03:05:23 imported map: 沙漏（卡口图）
+2026/04/18 03:05:23 imported map: 迷宫（死胡同图）
+2026/04/18 03:05:23 imported map: 孤岛（传送带陷阱图）
+2026/04/18 03:05:23 imported map: 荒漠（极限资源图）
+2026/04/18 03:05:23 imported map: 独木桥（单行道图）
+2026/04/18 03:05:23 imported map: 螺旋（漩涡图）
+2026/04/18 03:05:23 imported map: 蚁穴（多层迷宫图）
+2026/04/18 03:05:23 imported map: 绞肉机（传送带对撞图）
+2026/04/18 03:05:23 imported map: 监狱（牢房图）
+2026/04/18 03:05:23 imported map: 竞技场（钻石图）
+2026/04/18 03:05:23 Arena API listening on :9090

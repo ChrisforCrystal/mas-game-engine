@@ -45,9 +45,11 @@ export type Ranking = {
   total: number;
   win_rate: number;
   avg_score: number;
+  rating: number;
 };
 
 export type MapInfo = {
+  id: number;
   path: string;
   name: string;
   description: string;
@@ -65,9 +67,44 @@ export type MapDetail = {
   cabinets: Record<string, number>;
 };
 
-export async function fetchMapDetail(filename: string): Promise<MapDetail> {
-  const res = await fetch(`${API}/maps/${encodeURIComponent(filename)}`, { cache: "no-store" });
+export async function fetchMapDetail(id: number): Promise<MapDetail> {
+  const res = await fetch(`${API}/maps/${id}`, { cache: "no-store" });
   if (!res.ok) throw new Error("map not found");
+  return res.json();
+}
+
+export async function createMap(data: { name: string; description: string; layout: string[]; cabinets: Record<string, number> }, token: string) {
+  const q = `?token=${encodeURIComponent(token)}`;
+  const res = await fetch(`${API}/maps${q}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    try { throw new Error(JSON.parse(body).error || body); } catch (e) { if (e instanceof Error && e.message !== body) throw e; throw new Error(body); }
+  }
+  return res.json();
+}
+
+export async function updateMap(id: number, data: { name: string; description: string; layout: string[]; cabinets: Record<string, number> }, token: string) {
+  const q = `?token=${encodeURIComponent(token)}`;
+  const res = await fetch(`${API}/maps/${id}${q}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    try { throw new Error(JSON.parse(body).error || body); } catch (e) { if (e instanceof Error && e.message !== body) throw e; throw new Error(body); }
+  }
+  return res.json();
+}
+
+export async function deleteMap(id: number, token: string) {
+  const q = `?token=${encodeURIComponent(token)}`;
+  const res = await fetch(`${API}/maps/${id}${q}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
@@ -117,11 +154,11 @@ export async function clearMatches(token?: string) {
   return res.json();
 }
 
-export async function startMatch(botAId: number, botBId: number, seed?: number, mapPath?: string) {
+export async function startMatch(botAId: number, botBId: number, seed?: number, mapId?: number) {
   const res = await fetch(`${API}/matches`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bot_a_id: botAId, bot_b_id: botBId, seed: seed ?? 0, map_path: mapPath ?? "" }),
+    body: JSON.stringify({ bot_a_id: botAId, bot_b_id: botBId, seed: seed ?? 0, map_id: mapId ?? 0 }),
   });
   if (!res.ok) {
     const body = await res.text();
