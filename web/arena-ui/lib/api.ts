@@ -31,6 +31,7 @@ export type Match = {
   replay_path: string | null;
   latency_a: number | null;
   latency_b: number | null;
+  slow_turns: number | null;
   started_at: string;
   finished_at: string | null;
 };
@@ -117,6 +118,16 @@ export async function fetchMatches(): Promise<Match[]> {
 
 export async function fetchRankings(): Promise<Ranking[]> {
   const res = await fetch(`${API}/rankings`, { cache: "no-store" });
+  return res.json();
+}
+
+export async function updateBot(id: number, data: { name?: string; url?: string; owner?: string }) {
+  const res = await fetch(`${API}/bots/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 

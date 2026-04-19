@@ -214,7 +214,7 @@ fn main() {
     println!("Starting match  seed={seed}  alpha={bot_a_url}  beta={bot_b_url}");
     log("--- match phase ---");
     let t = Instant::now();
-    let (_, replay, summary) = match &layout_json {
+    let (_, replay, summary, slow_turns) = match &layout_json {
         Some(json) => run_match_with_layout(seed, config, json, &bot_a, &bot_b),
         None => run_match_with_progress(seed, config, &bot_a, &bot_b),
     };
@@ -242,8 +242,8 @@ fn main() {
         total_start.elapsed().as_secs_f64() * 1000.0,
         summary.final_scores[0], summary.final_scores[1]));
     println!(
-        "Done  winner={winner}  alpha={}  beta={}  replay={}",
-        summary.final_scores[0], summary.final_scores[1], replay_path.display()
+        "Done  winner={winner}  alpha={}  beta={}  replay={}  slow={}",
+        summary.final_scores[0], summary.final_scores[1], replay_path.display(), slow_turns
     );
 }
 
@@ -277,7 +277,7 @@ fn extract_map_name(json: &str) -> String {
 fn run_match_with_progress(
     seed: u64, config: GameConfig,
     alpha: &dyn BotStrategy, beta: &dyn BotStrategy,
-) -> (GameState, engine_core::Replay, engine_core::MatchSummary) {
+) -> (GameState, engine_core::Replay, engine_core::MatchSummary, u32) {
     use engine_core::{Replay, Team};
     use engine_core::rules::apply_turn;
     let mut state = GameState::new(seed, config);
@@ -312,13 +312,14 @@ fn run_match_with_progress(
     };
     let summary = engine_core::MatchSummary { seed, final_scores: state.scores, winner };
     replay.summary = Some(summary.clone());
-    (state, replay, summary)
+    (state, replay, summary, slow_turns)
 }
 
+#[allow(clippy::type_complexity)]
 fn run_match_with_layout(
     seed: u64, config: GameConfig, layout_json: &str,
     alpha: &dyn BotStrategy, beta: &dyn BotStrategy,
-) -> (GameState, engine_core::Replay, engine_core::MatchSummary) {
+) -> (GameState, engine_core::Replay, engine_core::MatchSummary, u32) {
     use engine_core::{Replay, Team};
     use engine_core::rules::apply_turn;
     let mut state = GameState::new_from_layout(seed, config, layout_json);
@@ -353,5 +354,5 @@ fn run_match_with_layout(
     };
     let summary = engine_core::MatchSummary { seed, final_scores: state.scores, winner };
     replay.summary = Some(summary.clone());
-    (state, replay, summary)
+    (state, replay, summary, slow_turns)
 }

@@ -2,10 +2,10 @@ import { ReplayBoard } from "@/components/replay-board";
 import { loadReplay, listReplays } from "@/lib/replay";
 import { fetchMatches, Match } from "@/lib/api";
 
-type Props = { searchParams: Promise<{ seed?: string; botA?: string; botB?: string; page?: string; token?: string }> };
+type Props = { searchParams: Promise<{ seed?: string; botA?: string; botB?: string; page?: string; token?: string; q?: string }> };
 
 export default async function Page({ searchParams }: Props) {
-  const { seed, botA, botB, page, token } = await searchParams;
+  const { seed, botA, botB, page, token, q } = await searchParams;
   const tokenQs = token ? `?token=${encodeURIComponent(token)}` : "";
   const replays = await listReplays();
 
@@ -27,10 +27,24 @@ export default async function Page({ searchParams }: Props) {
       return true;
     });
 
+    // filter by search query (bot name, map name, seed)
+    const query = (q || "").toLowerCase().trim();
+    const filteredReplays = query
+      ? uniqueReplays.filter((r) => {
+          const seedNum = r.split("-")[0];
+          const info = matchMap[seedNum];
+          if (seedNum.includes(query)) return true;
+          if (!info) return false;
+          return info.botA.toLowerCase().includes(query)
+            || info.botB.toLowerCase().includes(query)
+            || (info.mapPath || "").toLowerCase().includes(query);
+        })
+      : uniqueReplays;
+
     const PAGE_SIZE = 10;
     const currentPage = Math.max(0, parseInt(page || "0", 10) || 0);
-    const totalPages = Math.ceil(uniqueReplays.length / PAGE_SIZE);
-    const pagedReplays = uniqueReplays.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+    const totalPages = Math.ceil(filteredReplays.length / PAGE_SIZE);
+    const pagedReplays = filteredReplays.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
     return (
       <div className="shell">
@@ -46,10 +60,22 @@ export default async function Page({ searchParams }: Props) {
               排行榜
             </a>
           </div>
-          {uniqueReplays.length === 0 ? (
-            <p style={{ color: "var(--muted)", textAlign: "center", padding: 40 }}>暂无回放记录，先发起一场比赛</p>
+          {/* search box */}
+          <form method="GET" action="/" style={{ marginBottom: 16 }}>
+            {token && <input type="hidden" name="token" value={token} />}
+            <input
+              name="q"
+              defaultValue={q || ""}
+              placeholder="搜索 bot 名称、地图、seed..."
+              style={{ width: "100%", background: "rgba(7,18,31,0.9)", border: "1px solid rgba(151,195,255,0.34)", borderRadius: 12, color: "#eff7ff", padding: "10px 14px", outline: "none", fontSize: "0.88rem" }}
+            />
+          </form>
+
+          {filteredReplays.length === 0 ? (
+            <p style={{ color: "var(--muted)", textAlign: "center", padding: 40 }}>{query ? `没有匹配「${q}」的回放` : "暂无回放记录，先发起一场比赛"}</p>
           ) : (
             <>
+              {query && <p style={{ color: "var(--muted)", fontSize: "0.78rem", marginBottom: 8 }}>找到 {filteredReplays.length} 条匹配结果</p>}
               <div style={{ display: "grid", gap: 10 }}>
                 {pagedReplays.map((r) => {
                   const seedNum = r.split("-")[0];
@@ -89,17 +115,23 @@ export default async function Page({ searchParams }: Props) {
               </div>
               {totalPages > 1 && (
                 <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 16 }}>
-                  {currentPage > 0 ? (
-                    <a href={`/?page=${currentPage - 1}${token ? `&token=${encodeURIComponent(token)}` : ""}`} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", textDecoration: "none" }}>上一页</a>
-                  ) : (
-                    <span style={{ border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--muted)", fontSize: "0.8rem", padding: "4px 14px", opacity: 0.4 }}>上一页</span>
-                  )}
-                  <span style={{ color: "var(--muted)", fontSize: "0.8rem", lineHeight: "28px" }}>{currentPage + 1} / {totalPages}</span>
-                  {(currentPage + 1) < totalPages ? (
-                    <a href={`/?page=${currentPage + 1}${token ? `&token=${encodeURIComponent(token)}` : ""}`} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", textDecoration: "none" }}>下一页</a>
-                  ) : (
-                    <span style={{ border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--muted)", fontSize: "0.8rem", padding: "4px 14px", opacity: 0.4 }}>下一页</span>
-                  )}
+                  {(() => {
+                    const extra = [token ? `token=${encodeURIComponent(token)}` : "", q ? `q=${encodeURIComponent(q)}` : ""].filter(Boolean).join("&");
+                    const qs = (p: number) => `/?page=${p}${extra ? `&${extra}` : ""}`;
+                    return (<>
+                      {currentPage > 0 ? (
+                        <a href={qs(currentPage - 1)} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", textDecoration: "none" }}>上一页</a>
+                      ) : (
+                        <span style={{ border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--muted)", fontSize: "0.8rem", padding: "4px 14px", opacity: 0.4 }}>上一页</span>
+                      )}
+                      <span style={{ color: "var(--muted)", fontSize: "0.8rem", lineHeight: "28px" }}>{currentPage + 1} / {totalPages}</span>
+                      {(currentPage + 1) < totalPages ? (
+                        <a href={qs(currentPage + 1)} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", textDecoration: "none" }}>下一页</a>
+                      ) : (
+                        <span style={{ border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--muted)", fontSize: "0.8rem", padding: "4px 14px", opacity: 0.4 }}>下一页</span>
+                      )}
+                    </>);
+                  })()}
                 </div>
               )}
             </>

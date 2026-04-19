@@ -6887,3 +6887,9 @@ Done  winner=Draw  alpha=0  beta=0  replay=./artifacts/replays/match-800000-1776
 2026/04/19 11:29:53 data dir: .
 2026/04/19 11:29:53 ARENA_ADMIN_TOKEN not set, using default token
 2026/04/19 11:29:53 Arena API listening on :9090
+2026/04/19 15:08:44 data dir: .
+2026/04/19 15:08:44 ARENA_ADMIN_TOKEN not set, using default token
+2026/04/19 15:08:44 Arena API listening on :9090
+2026/04/19 15:10:59 data dir: .
+2026/04/19 15:10:59 ARENA_ADMIN_TOKEN not set, using default token
+2026/04/19 15:10:59 Arena API listening on :9090
