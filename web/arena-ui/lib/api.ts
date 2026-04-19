@@ -24,7 +24,7 @@ export type Match = {
   bot_b_name: string;
   seed: number;
   map_path: string | null;
-  status: "pending" | "running" | "done" | "error";
+  status: "pending" | "running" | "done" | "error" | "queued";
   winner: "Alpha" | "Beta" | null;
   score_a: number | null;
   score_b: number | null;
@@ -73,9 +73,8 @@ export async function fetchMapDetail(id: number): Promise<MapDetail> {
   return res.json();
 }
 
-export async function createMap(data: { name: string; description: string; layout: string[]; cabinets: Record<string, number> }, token: string) {
-  const q = `?token=${encodeURIComponent(token)}`;
-  const res = await fetch(`${API}/maps${q}`, {
+export async function createMap(data: { name: string; description: string; layout: string[]; cabinets: Record<string, number> }) {
+  const res = await fetch(`${API}/maps`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -87,9 +86,8 @@ export async function createMap(data: { name: string; description: string; layou
   return res.json();
 }
 
-export async function updateMap(id: number, data: { name: string; description: string; layout: string[]; cabinets: Record<string, number> }, token: string) {
-  const q = `?token=${encodeURIComponent(token)}`;
-  const res = await fetch(`${API}/maps/${id}${q}`, {
+export async function updateMap(id: number, data: { name: string; description: string; layout: string[]; cabinets: Record<string, number> }) {
+  const res = await fetch(`${API}/maps/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -101,9 +99,8 @@ export async function updateMap(id: number, data: { name: string; description: s
   return res.json();
 }
 
-export async function deleteMap(id: number, token: string) {
-  const q = `?token=${encodeURIComponent(token)}`;
-  const res = await fetch(`${API}/maps/${id}${q}`, { method: "DELETE" });
+export async function deleteMap(id: number) {
+  const res = await fetch(`${API}/maps/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -151,6 +148,33 @@ export async function clearMatches(token?: string) {
   const q = token ? `?token=${encodeURIComponent(token)}` : "";
   const res = await fetch(`${API}/matches${q}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export type BotStats = {
+  bot_id: number;
+  bot_name: string;
+  owner: string;
+  recent: { id: number; opponent: string; my_score: number; opp_score: number; won: boolean; draw: boolean; map_path: string | null; seed: number }[];
+  map_stats: { map_path: string; wins: number; losses: number; draws: number; total: number; win_rate: number; avg_score: number }[];
+  opp_stats: { opponent: string; wins: number; losses: number; draws: number; total: number; win_rate: number }[];
+  trend: { match_id: number; score: number; won: boolean }[];
+};
+
+export type BotHealth = {
+  online: boolean;
+  latency_ms: number;
+  checked_at: string;
+};
+
+export async function fetchBotHealth(): Promise<Record<string, BotHealth>> {
+  const res = await fetch(`${API}/bots/health`, { cache: "no-store" });
+  return res.json();
+}
+
+export async function fetchBotStats(botId: number): Promise<BotStats> {
+  const res = await fetch(`${API}/bots/${botId}/stats`, { cache: "no-store" });
+  if (!res.ok) throw new Error("bot not found");
   return res.json();
 }
 

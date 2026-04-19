@@ -42,7 +42,6 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
   const [isPlaying, setIsPlaying] = useState(true);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showResult, setShowResult] = useState(false);
-  const [canvasDisplaySize, setCanvasDisplaySize] = useState<number | null>(null);
   const [showPanels, setShowPanels] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const fullscreenRef = useRef<HTMLDivElement | null>(null);
@@ -99,54 +98,6 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
 
-  useEffect(() => {
-    const shell = canvasShellRef.current;
-    if (!shell) {
-      return;
-    }
-
-    let frameHandle = 0;
-    const updateCanvasSize = () => {
-      window.cancelAnimationFrame(frameHandle);
-      frameHandle = window.requestAnimationFrame(() => {
-        const style = window.getComputedStyle(shell);
-        const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-        const availableWidth = Math.max(320, shell.clientWidth - horizontalPadding);
-        const viewportHeight = window.innerHeight;
-        const shellTop = shell.getBoundingClientRect().top;
-        const currentViewportBudget = viewportHeight - Math.max(0, shellTop) - 72;
-        const comfortableHeightCap = viewportHeight * 0.68;
-        const hardCap = 940;
-        const minReadable = viewportHeight < 820 ? 500 : 640;
-
-        let nextSize = Math.min(
-          availableWidth,
-          Math.max(420, currentViewportBudget),
-          comfortableHeightCap,
-          hardCap,
-        );
-
-        if (availableWidth >= minReadable && currentViewportBudget >= minReadable * 0.82) {
-          nextSize = Math.max(nextSize, minReadable);
-        }
-
-        setCanvasDisplaySize(Math.floor(Math.max(320, nextSize)));
-      });
-    };
-
-    const observer = new ResizeObserver(updateCanvasSize);
-    observer.observe(shell);
-    window.addEventListener("resize", updateCanvasSize);
-    window.addEventListener("scroll", updateCanvasSize, { passive: true });
-    updateCanvasSize();
-
-    return () => {
-      window.cancelAnimationFrame(frameHandle);
-      observer.disconnect();
-      window.removeEventListener("resize", updateCanvasSize);
-      window.removeEventListener("scroll", updateCanvasSize);
-    };
-  }, []);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -175,7 +126,7 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
   const scoreLead = frame.scores[0] - frame.scores[1];
 
   return (
-    <main className="shell">
+    <main className="shell" style={{ padding: "56px 16px 16px" }}>
       {showResult && replay.summary && (
         <ResultModal
           summary={replay.summary}
@@ -185,241 +136,79 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
           botBName={botBName}
         />
       )}
-      <div className="arena-shell frame">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          {availableSeeds.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ color: "var(--muted)", fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>回放</span>
+      <div className="replay-focused">
+        {/* compact toolbar */}
+        <div className="replay-toolbar">
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {availableSeeds.length > 0 && (
               <select
                 defaultValue={seed}
                 onChange={(e) => { window.location.href = `/?seed=${e.target.value}`; }}
-                style={{ background: "rgba(7,18,31,0.9)", border: "1px solid var(--line-strong)", borderRadius: 999, color: "var(--text)", padding: "6px 14px", fontSize: "0.84rem", cursor: "pointer", outline: "none" }}
+                className="replay-select"
               >
-              {availableSeeds.map((s) => {
+                {availableSeeds.map((s) => {
                   const info = matchMap[s.split("-")[0]];
                   const label = info ? `${info.botA} vs ${info.botB} #${info.id}` : `seed ${s}`;
                   return <option key={s} value={s}>{label}</option>;
                 })}
               </select>
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 10, marginLeft: "auto" }}>
-            <a href="/arena" style={{ textDecoration: "none" }}>
-              <button className="control-button" type="button" style={{ color: "var(--muted)", border: "1px solid rgba(118,155,196,0.18)", opacity: 0.6 }}>排行榜</button>
-            </a>
-            <button
-              className="control-button"
-              type="button"
-              style={{ background: "rgba(25,225,255,0.12)", border: "1px solid var(--alpha)", color: "var(--alpha)" }}
-            >
-              回放
+            )}
+            <span style={{ color: "var(--muted)", fontSize: "0.74rem" }}>种子 {replay.seed}</span>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className="replay-btn" onClick={() => { setIsPlaying(false); setFrameIndex(0); }}>⟲</button>
+            <button className="replay-btn active" onClick={() => setIsPlaying(p => !p)}>{isPlaying ? "❚❚" : "▶"}</button>
+            <select value={playbackSpeed} onChange={e => setPlaybackSpeed(Number(e.target.value))} className="replay-select small">
+              <option value={0.5}>0.5x</option>
+              <option value={1}>1x</option>
+              <option value={2}>2x</option>
+              <option value={4}>4x</option>
+            </select>
+            <button className="replay-btn" onClick={() => setShowPanels(p => !p)} title={showPanels ? "收起面板" : "展开面板"}>
+              {showPanels ? "✕" : "☰"}
             </button>
           </div>
         </div>
-        <header className="hero-bar">
-          <div className="hero-copy">
-            <p className="eyebrow">智能体竞技回放台</p>
-            <div className="versus-row">
-              <section className="team-panel alpha-team">
-                <span className="team-tag">蓝方</span>
-                {botAName && <span style={{ fontSize: "0.82rem", color: "var(--alpha)", opacity: 0.85 }}>{botAName}</span>}
-                <strong>{frame.scores[0]}</strong>
-              </section>
-              <div className="versus-center">
-                <h1>机房调度走廊</h1>
-                <p>
-                  种子 {replay.seed} · 回合 {frame.turn} / {replay.frames.length}
-                </p>
+
+        <div className={`replay-layout${showPanels ? " with-panels" : ""}`}>
+          {/* side panel - only visible when toggled */}
+          {showPanels && (
+            <aside className="replay-side-panel">
+              <div className="rsp-section">
+                <div className="rsp-title">战局</div>
+                <div className="rsp-row"><span style={{ color: "var(--alpha)" }}>蓝</span> 载荷 {alphaStats.cargo} · 满载 {alphaStats.loaded} · 干扰 {alphaStats.jammed}</div>
+                <div className="rsp-row"><span style={{ color: "var(--beta)" }}>红</span> 载荷 {betaStats.cargo} · 满载 {betaStats.loaded} · 干扰 {betaStats.jammed}</div>
               </div>
-              <section className="team-panel beta-team">
-                <span className="team-tag">红方</span>
-                {botBName && <span style={{ fontSize: "0.82rem", color: "var(--beta)", opacity: 0.85 }}>{botBName}</span>}
-                <strong>{frame.scores[1]}</strong>
-              </section>
-            </div>
-          </div>
-
-          <div className="hero-controls">
-            <button
-              className="control-button"
-              type="button"
-              onClick={() => setIsPlaying((current) => !current)}
-            >
-              {isPlaying ? "暂停" : "播放"}
-            </button>
-            <button
-              className="control-button subtle"
-              type="button"
-              onClick={() => {
-                setIsPlaying(false);
-                setFrameIndex(0);
-              }}
-            >
-              重播
-            </button>
-            <label className="speed-chip">
-              速度
-              <select
-                value={playbackSpeed}
-                onChange={(event) => setPlaybackSpeed(Number(event.target.value))}
-              >
-                <option value={0.5}>0.5x</option>
-                <option value={1}>1x</option>
-                <option value={2}>2x</option>
-                <option value={4}>4x</option>
-              </select>
-            </label>
-          </div>
-        </header>
-
-        <section className="headline-strip">
-          <div className="headline-card">
-            <span className="headline-label">领先差</span>
-            <strong>{scoreLead === 0 ? "势均力敌" : `${Math.abs(scoreLead)} 分`}</strong>
-            <small>{scoreLead >= 0 ? "蓝方占优" : "红方占优"}</small>
-          </div>
-          <div className="headline-card">
-            <span className="headline-label">在途载荷</span>
-            <strong>{alphaStats.cargo + betaStats.cargo}</strong>
-            <small>当前机器人携带总能量</small>
-          </div>
-          <div className="headline-card">
-            <span className="headline-label">受干扰数</span>
-            <strong>{alphaStats.jammed + betaStats.jammed}</strong>
-            <small>当前受控机器人数量</small>
-          </div>
-          <div className="headline-card">
-            <span className="headline-label">即时判断</span>
-            <strong>{scoreLead === 0 ? "仍未分胜负" : scoreLead > 0 ? "蓝方" : "红方"}</strong>
-            <small>仅按当前比分估计</small>
-          </div>
-        </section>
-
-        <section className={`content-grid${showPanels ? " expanded" : ""}`}>
-          <aside className="side-column">
-            <div className="side-card frame">
-              <h2>战局监控</h2>
-              <StatBlock
-                title="蓝方"
-                tint="alpha"
-                rows={[
-                  ["载荷", String(alphaStats.cargo)],
-                  ["满载机器人", String(alphaStats.loaded)],
-                  ["受干扰", String(alphaStats.jammed)],
-                ]}
-              />
-              <StatBlock
-                title="红方"
-                tint="beta"
-                rows={[
-                  ["载荷", String(betaStats.cargo)],
-                  ["满载机器人", String(betaStats.loaded)],
-                  ["受干扰", String(betaStats.jammed)],
-                ]}
-              />
-            </div>
-
-            <div className="side-card frame">
-              <h2>地图热点</h2>
-              <ul className="legend-list">
-                <li>
-                  <span className="legend-swatch conveyor" />
-                  中央输送带脊柱
-                </li>
-                <li>
-                  <span className="legend-swatch cabinet" />
-                  多机架投递网络
-                </li>
-                <li>
-                  <span className="legend-swatch e1" />
-                  随机能量闪电
-                </li>
-                <li>
-                  <span className="legend-swatch e2" />
-                  深区高值热点
-                </li>
-              </ul>
-            </div>
-
-            <div className="side-card frame">
-              <h2>机架状态</h2>
-              <div className="cabinet-summary-bar">
-                <strong>{cabinets.length} 台机架</strong>
-                <small>远端分散投递，面板内滚动查看</small>
-              </div>
-              <div className="cabinet-grid compact">
-                {cabinets.map((cabinet) => (
-                  <article className="cabinet-mini" key={cabinet.id}>
-                    <div className="cabinet-mini-header">
-                      <strong>R{cabinet.id}</strong>
-                      <span className={`cabinet-status ${statusClassName(cabinet)}`}>
-                        {statusLabel(cabinet)}
-                      </span>
-                    </div>
-                    <div className="cabinet-mini-body">
-                      <div className="cabinet-mini-battery" aria-hidden="true">
-                        <span className="mini-battery-shell" />
-                        <span className="mini-battery-cap" />
-                        <span
-                          className="mini-battery-fill"
-                          style={{
-                            height: `${cabinet.capacity === 0 ? 0 : (cabinet.occupied / cabinet.capacity) * 100}%`,
-                            background: cabinetBatteryColor(cabinet),
-                          }}
-                        />
-                        <span className="mini-battery-mark mark-1" />
-                        <span className="mini-battery-mark mark-2" />
-                        <span className="mini-battery-mark mark-3" />
-                        <span className="mini-battery-bolt" />
-                      </div>
-                      <div className="cabinet-mini-stats">
-                        <div className="cabinet-mini-row">
-                          <span>余量</span>
-                          <strong>{cabinet.remaining}</strong>
-                        </div>
-                        <div className="cabinet-mini-row">
-                          <span>占用</span>
-                          <strong>{cabinet.occupied}</strong>
-                        </div>
-                        <div className="cabinet-mini-row">
-                          <span>总量</span>
-                          <strong>{cabinet.capacity}</strong>
-                        </div>
-                        <div className="cabinet-mini-row">
-                          <span>占比</span>
-                          <strong>{Math.round((cabinet.occupied / cabinet.capacity) * 100)}%</strong>
-                        </div>
-                        <div className="cabinet-mini-track">
-                          <span
-                            className="cabinet-mini-track-fill"
-                            style={{ width: `${cabinet.capacity === 0 ? 0 : (cabinet.occupied / cabinet.capacity) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </article>
+              <div className="rsp-section">
+                <div className="rsp-title">机架 ({cabinets.length})</div>
+                {cabinets.map(c => (
+                  <div key={c.id} className="rsp-cabinet">
+                    <span>R{c.id}</span>
+                    <div className="rsp-cab-bar"><span style={{ width: `${c.capacity === 0 ? 0 : (c.occupied / c.capacity) * 100}%`, background: cabinetBatteryColor(c) }} /></div>
+                    <span>{Math.round((c.occupied / c.capacity) * 100)}%</span>
+                  </div>
                 ))}
               </div>
-            </div>
-          </aside>
+              <div className="rsp-section">
+                <div className="rsp-title">事件</div>
+                <div className="rsp-events">
+                  {prominentEvents.length === 0 ? (
+                    <div className="rsp-row" style={{ opacity: 0.5 }}>开局阶段</div>
+                  ) : (
+                    prominentEvents.slice().reverse().slice(0, 20).map((event, i) => (
+                      <div key={`${event.turn}-${i}`} className="rsp-event" style={{ borderLeftColor: event.team === "Alpha" ? "var(--alpha)" : event.team === "Beta" ? "var(--beta)" : "var(--gold)" }}>
+                        <span className="rsp-event-turn">T{event.turn}</span> {event.text}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </aside>
+          )}
 
-          <section className="map-stage frame">
-            <div className="map-stage-header">
-              <div>
-                <p className="eyebrow">实时战术板</p>
-                <h2>机房主控网格</h2>
-              </div>
-              <div className="map-pill-row">
-                <span className="map-pill alpha">蓝方得分 {frame.scores[0]}</span>
-                <span className="map-pill beta">红方得分 {frame.scores[1]}</span>
-                <button
-                  onClick={() => setShowPanels(p => !p)}
-                  style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--muted)", fontSize: "0.72rem", padding: "2px 10px", cursor: "pointer", marginLeft: 8 }}
-                >
-                  {showPanels ? "收起面板" : "展开面板"}
-                </button>
-              </div>
-            </div>
+          {/* main canvas area */}
+          <section className="replay-main">
 
             <div ref={fullscreenRef} style={isFullscreen ? { background: "#040b14", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", width: "100%", height: "100%" } : undefined}>
             <div className="canvas-shell" ref={canvasShellRef} style={{ position: "relative" }}>
@@ -435,17 +224,33 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
               {/* fullscreen button */}
               <button
                 onClick={toggleFullscreen}
-                style={{ position: "absolute", top: 8, right: 12, zIndex: 10, background: "rgba(0,0,0,0.5)", border: "1px solid var(--line-strong)", borderRadius: 6, color: "var(--muted)", fontSize: "0.7rem", padding: "3px 8px", cursor: "pointer", backdropFilter: "blur(4px)" }}
+                style={{ position: "absolute", top: 10, right: 14, zIndex: 10, background: "rgba(25,225,255,0.12)", border: "1px solid rgba(25,225,255,0.5)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.78rem", padding: "6px 14px", cursor: "pointer", backdropFilter: "blur(6px)", fontWeight: 600, letterSpacing: "0.06em" }}
               >
-                {isFullscreen ? "退出全屏" : "全屏"}
+                {isFullscreen ? "退出全屏" : "⛶ 全屏观战"}
               </button>
               <canvas
                 ref={canvasRef}
                 aria-label="Arena replay map"
                 style={isFullscreen
                   ? { width: "auto", height: "calc(100vh - 80px)", maxWidth: "100vw" }
-                  : canvasDisplaySize ? { width: canvasDisplaySize, height: "auto" } : undefined}
+                  : { width: "100%", height: "auto" }}
               />
+              {/* live commentary bar */}
+              {(() => {
+                const currentEvents = eventCards.filter(e => e.turn === frame.turn);
+                if (currentEvents.length === 0) return null;
+                return (
+                  <div style={{ position: "absolute", bottom: 6, left: 12, right: 12, zIndex: 10, pointerEvents: "none" }}>
+                    <div style={{ background: "rgba(4,11,20,0.85)", backdropFilter: "blur(8px)", borderRadius: 10, padding: "6px 14px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                      {currentEvents.slice(0, 3).map((e, i) => (
+                        <div key={i} style={{ fontSize: "0.76rem", lineHeight: 1.6, color: e.team === "Alpha" ? "#19e1ff" : e.team === "Beta" ? "#ff4f6d" : "var(--gold)" }}>
+                          {e.text}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             {/* fullscreen playback controls */}
             {isFullscreen && (
@@ -472,54 +277,12 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
             </div>
           </section>
 
-          <aside className="side-column">
-            <div className="side-card frame">
-              <h2>事件流</h2>
-              <div className="event-feed">
-                {prominentEvents.length === 0 ? (
-                  <p className="empty-copy">当前仍处于开局调度阶段。</p>
-                ) : (
-                  prominentEvents
-                    .slice()
-                    .reverse()
-                    .map((event) => (
-                      <article key={`${event.turn}-${event.text}`} className={`event-card ${event.team.toLowerCase()}`}>
-                        <span>回合 {event.turn}</span>
-                        <strong>{event.text}</strong>
-                      </article>
-                    ))
-                )}
-              </div>
-            </div>
+        </div>
 
-            <div className="side-card frame">
-              <h2>本回合动作</h2>
-              <ul className="turn-actions">
-                {frame.actions.slice(0, 10).map(([robotId, action]) => (
-                  <li key={`${frame.turn}-${robotId}`}>
-                    <span>R{robotId}</span>
-                    <strong>{formatAction(action)}</strong>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </aside>
-        </section>
-
-        <footer className="timeline-panel frame">
-          <div className="timeline-topline">
-            <div>
-              <p className="eyebrow">时间轴</p>
-              <h3>500 回合战局走势</h3>
-            </div>
-            <strong>
-              已完成 {Math.round((frame.turn / replay.frames.length) * 100)}%
-            </strong>
-          </div>
-
+        {/* slim timeline */}
+        <div className="replay-timeline">
           <input
             aria-label="Replay progress"
-            className="timeline-slider"
             type="range"
             min={0}
             max={replay.frames.length - 1}
@@ -528,8 +291,8 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
               setIsPlaying(false);
               startTransition(() => setFrameIndex(Number(event.target.value)));
             }}
+            style={{ width: "100%", accentColor: "var(--alpha)" }}
           />
-
           <div className="timeline-scorebar" aria-hidden="true">
             {replay.frames.map((entry, index) => {
               const alphaAhead = entry.scores[0] >= entry.scores[1];
@@ -542,69 +305,112 @@ export function ReplayBoard({ replay, seed, availableSeeds, botAName, botBName, 
               );
             })}
           </div>
-        </footer>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "var(--muted)", marginTop: 4 }}>
+            <span>回合 {frame.turn} / {replay.frames.length}</span>
+            <span>{Math.round((frame.turn / replay.frames.length) * 100)}%</span>
+          </div>
+        </div>
       </div>
     </main>
   );
 }
 
-function StatBlock({
-  title,
-  tint,
-  rows,
-}: {
-  title: string;
-  tint: "alpha" | "beta";
-  rows: [string, string][];
-}) {
-  return (
-    <section className={`stat-block ${tint}`}>
-      <header>
-        <span>{title}</span>
-      </header>
-      {rows.map(([label, value]) => (
-        <div className="stat-row" key={`${title}-${label}`}>
-          <small>{label}</small>
-          <strong>{value}</strong>
-        </div>
-      ))}
-    </section>
-  );
-}
+/* StatBlock removed — replaced by inline compact panel */
 
 function buildEventCards(replay: ReplayData): EventCard[] {
+  let prevAlpha = 0;
+  let prevBeta = 0;
+  let alphaLeading = false;
+  let betaLeading = false;
+
   return replay.frames.flatMap((frame) => {
-    const explicit = frame.events.map<EventCard>((event) => ({
-      turn: frame.turn,
-      text: `R${event.robot_id} ${event.description}`,
-      team: inferTeam(frame.robots, event.robot_id),
-    }));
+    const cards: EventCard[] = [];
 
+    // opening
     if (frame.turn === 1) {
-      explicit.push({
-        turn: frame.turn,
-        text: "双方机器人离开出生走廊，开始进入机房通道。",
-        team: "Neutral",
-      });
+      cards.push({ turn: 1, text: "比赛开始！双方机器人离开出生区，进入机房通道。", team: "Neutral" });
     }
 
-    if (frame.scores[0] !== replay.frames[Math.max(0, frame.turn - 2)]?.scores?.[0]) {
-      explicit.push({
-        turn: frame.turn,
-        text: `蓝方累计得分来到 ${frame.scores[0]}。`,
-        team: "Alpha",
-      });
+    // engine events with richer descriptions
+    for (const evt of frame.events) {
+      const team = inferTeam(frame.robots, evt.robot_id);
+      const teamLabel = team === "Alpha" ? "蓝方" : "红方";
+      const desc = evt.description;
+
+      if (desc.includes("投递")) {
+        const m = desc.match(/(\d+)\s*点/);
+        const amt = m ? Number(m[1]) : 0;
+        if (amt >= 80) {
+          cards.push({ turn: frame.turn, text: `${teamLabel} R${evt.robot_id} 大额投递 ${amt} 点能量！`, team });
+        } else {
+          cards.push({ turn: frame.turn, text: `${teamLabel} R${evt.robot_id} ${desc}`, team });
+        }
+      } else if (desc.includes("拾取")) {
+        const m = desc.match(/(\d+)\s*点/);
+        const amt = m ? Number(m[1]) : 0;
+        if (amt >= 60) {
+          cards.push({ turn: frame.turn, text: `${teamLabel} R${evt.robot_id} 捡到高价值能量 ${amt} 点！`, team });
+        } else {
+          cards.push({ turn: frame.turn, text: `${teamLabel} R${evt.robot_id} ${desc}`, team });
+        }
+      } else {
+        cards.push({ turn: frame.turn, text: `${teamLabel} R${evt.robot_id} ${desc}`, team });
+      }
     }
 
-    if (frame.scores[1] !== replay.frames[Math.max(0, frame.turn - 2)]?.scores?.[1]) {
-      explicit.push({
-        turn: frame.turn,
-        text: `红方累计得分来到 ${frame.scores[1]}。`,
-        team: "Beta",
-      });
+    // JAM events from actions
+    for (const [rid, act] of frame.actions) {
+      if (act === "Jam") {
+        const team = inferTeam(frame.robots, rid);
+        const teamLabel = team === "Alpha" ? "蓝方" : "红方";
+        const robot = frame.robots.find(r => r.id === rid);
+        if (robot && robot.jam_cooldown > 0) {
+          // jam was just used (cooldown just started)
+          cards.push({ turn: frame.turn, text: `${teamLabel} R${rid} 发动干扰！对手被眩晕 1 回合`, team });
+        }
+      }
     }
 
-    return explicit;
+    // score changes
+    const [sa, sb] = frame.scores;
+    const deltaA = sa - prevAlpha;
+    const deltaB = sb - prevBeta;
+
+    if (deltaA > 0) {
+      cards.push({ turn: frame.turn, text: `蓝方得分 +${deltaA}，累计 ${sa}`, team: "Alpha" });
+    }
+    if (deltaB > 0) {
+      cards.push({ turn: frame.turn, text: `红方得分 +${deltaB}，累计 ${sb}`, team: "Beta" });
+    }
+
+    // lead change
+    if (sa > sb && !alphaLeading && prevAlpha <= prevBeta && frame.turn > 1) {
+      cards.push({ turn: frame.turn, text: `蓝方反超！${sa} : ${sb}`, team: "Alpha" });
+    }
+    if (sb > sa && !betaLeading && prevBeta <= prevAlpha && frame.turn > 1) {
+      cards.push({ turn: frame.turn, text: `红方反超！${sb} : ${sa}`, team: "Beta" });
+    }
+    alphaLeading = sa > sb;
+    betaLeading = sb > sa;
+
+    // full cargo alert
+    for (const robot of frame.robots) {
+      if (robot.cargo >= 140) {
+        const team = robot.team;
+        const teamLabel = team === "Alpha" ? "蓝方" : "红方";
+        cards.push({ turn: frame.turn, text: `${teamLabel} R${robot.id} 背包接近满载（${robot.cargo}/150），需要尽快回仓`, team });
+      }
+    }
+
+    // milestone turns
+    if (frame.turn === 100) cards.push({ turn: 100, text: `前 100 回合结束，蓝方 ${sa} : 红方 ${sb}`, team: "Neutral" });
+    if (frame.turn === 250) cards.push({ turn: 250, text: `半场结束！蓝方 ${sa} : 红方 ${sb}`, team: "Neutral" });
+    if (frame.turn === 400) cards.push({ turn: 400, text: `进入最后 100 回合冲刺！蓝方 ${sa} : 红方 ${sb}`, team: "Neutral" });
+    if (frame.turn === 450) cards.push({ turn: 450, text: `最后 50 回合！蓝方 ${sa} : 红方 ${sb}，胜负即将揭晓`, team: "Neutral" });
+
+    prevAlpha = sa;
+    prevBeta = sb;
+    return cards;
   });
 }
 
@@ -640,27 +446,6 @@ function summarizeCabinets(tiles: Tile[]): CabinetStatus[] {
     .sort((left, right) => left.id - right.id);
 }
 
-function statusLabel(cabinet: CabinetStatus) {
-  const ratio = cabinet.capacity === 0 ? 0 : cabinet.occupied / cabinet.capacity;
-  if (ratio >= 0.9) {
-    return "已接近满载";
-  }
-  if (ratio >= 0.55) {
-    return "处理中";
-  }
-  return "空闲";
-}
-
-function statusClassName(cabinet: CabinetStatus) {
-  const ratio = cabinet.capacity === 0 ? 0 : cabinet.occupied / cabinet.capacity;
-  if (ratio >= 0.85) {
-    return "hot";
-  }
-  if (ratio >= 0.45) {
-    return "warm";
-  }
-  return "cool";
-}
 
 function drawTiles(
   context: CanvasRenderingContext2D,
@@ -832,7 +617,7 @@ function drawCabinetTile(
     context.font = "700 7px sans-serif";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.fillText(`${pct}`, px + TILE_SIZE / 2, py + TILE_SIZE / 2);
+    context.fillText(`${pct}%`, px + TILE_SIZE / 2, py + TILE_SIZE / 2);
     context.textBaseline = "alphabetic";
   } else {
     // empty cabinet — small icon
@@ -1065,24 +850,6 @@ function ResultModal({
       </div>
     </div>
   );
-}
-
-function formatAction(action: ReplayFrame["actions"][number][1]) {
-  if (typeof action === "string") {
-    return ({
-      Pick: "拾取",
-      Drop: "投递",
-      Jam: "干扰",
-      Wait: "待机",
-    } as const)[action];
-  }
-  const direction = {
-    Up: "上移",
-    Down: "下移",
-    Left: "左移",
-    Right: "右移",
-  } as const;
-  return direction[action.Move];
 }
 
 function cabinetBatteryColor(cabinet: CabinetStatus) {

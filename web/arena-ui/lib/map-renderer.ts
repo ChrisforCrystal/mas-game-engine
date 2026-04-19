@@ -232,7 +232,7 @@ export function drawCabinetTile(
     context.font = "700 7px sans-serif";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.fillText(`${pct}`, px + TILE_SIZE / 2, py + TILE_SIZE / 2);
+    context.fillText(`${pct}%`, px + TILE_SIZE / 2, py + TILE_SIZE / 2);
     context.textBaseline = "alphabetic";
   } else {
     // empty cabinet — small icon

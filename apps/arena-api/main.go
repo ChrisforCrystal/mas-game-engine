@@ -43,6 +43,138 @@ type matchLive struct {
 
 var liveMatches sync.Map // map[int64]*matchLive
 
+// ── bot health probe ────────────────────────────────────────────────────────
+
+type botHealth struct {
+	Online    bool   `json:"online"`
+	Latency   int    `json:"latency_ms"`
+	CheckedAt string `json:"checked_at"`
+}
+
+var botHealthMap sync.Map // map[int64]*botHealth
+
+func startHealthProbe() {
+	probe := func() {
+		rows, err := db.Query(`SELECT id, url FROM bots`)
+		if err != nil {
+			return
+		}
+		defer rows.Close()
+		type target struct {
+			id  int64
+			url string
+		}
+		var targets []target
+		for rows.Next() {
+			var t target
+			rows.Scan(&t.id, &t.url)
+			targets = append(targets, t)
+		}
+		var wg sync.WaitGroup
+		for _, t := range targets {
+			wg.Add(1)
+			go func(t target) {
+				defer wg.Done()
+				latency, err := pingBot(t.url)
+				h := &botHealth{
+					Online:    err == nil,
+					Latency:   latency,
+					CheckedAt: time.Now().UTC().Format(time.RFC3339),
+				}
+				botHealthMap.Store(t.id, h)
+			}(t)
+		}
+		wg.Wait()
+	}
+	probe()
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			probe()
+		}
+	}()
+}
+
+func handleBotHealth(w http.ResponseWriter, r *http.Request) {
+	result := map[string]*botHealth{}
+	botHealthMap.Range(func(key, value any) bool {
+		id := key.(int64)
+		h := value.(*botHealth)
+		result[strconv.FormatInt(id, 10)] = h
+		return true
+	})
+	writeJSON(w, 200, result)
+}
+
+// ── match queue ─────────────────────────────────────────────────────────────
+
+const maxRunningMatches = 10
+
+type matchJob struct {
+	MatchID      int64
+	BotAURL      string
+	BotBURL      string
+	Seed         int64
+	RunnerMapPath string
+}
+
+var (
+	matchQueue   []matchJob
+	matchQueueMu sync.Mutex
+	runningCount int
+)
+
+func enqueueMatch(job matchJob) int {
+	matchQueueMu.Lock()
+	defer matchQueueMu.Unlock()
+	matchQueue = append(matchQueue, job)
+	pos := len(matchQueue)
+	log.Printf("[queue] match %d enqueued at position %d (running=%d)", job.MatchID, pos, runningCount)
+	go drainQueue()
+	return pos
+}
+
+func drainQueue() {
+	matchQueueMu.Lock()
+	for runningCount < maxRunningMatches && len(matchQueue) > 0 {
+		job := matchQueue[0]
+		matchQueue = matchQueue[1:]
+		runningCount++
+		log.Printf("[queue] match %d dequeued, starting (running=%d, queued=%d)", job.MatchID, runningCount, len(matchQueue))
+		// update status from queued to running
+		db.Exec(`UPDATE matches SET status='running' WHERE id=?`, job.MatchID)
+		go func(j matchJob) {
+			defer func() {
+				matchQueueMu.Lock()
+				runningCount--
+				log.Printf("[queue] match %d finished (running=%d, queued=%d)", j.MatchID, runningCount, len(matchQueue))
+				matchQueueMu.Unlock()
+				go drainQueue()
+			}()
+			runMatch(j.MatchID, j.BotAURL, j.BotBURL, j.Seed, j.RunnerMapPath)
+		}(job)
+	}
+	matchQueueMu.Unlock()
+}
+
+func queueStatus() (running int, queued int) {
+	matchQueueMu.Lock()
+	defer matchQueueMu.Unlock()
+	return runningCount, len(matchQueue)
+}
+
+func queuePosition(matchID int64) int {
+	matchQueueMu.Lock()
+	defer matchQueueMu.Unlock()
+	for i, j := range matchQueue {
+		if j.MatchID == matchID {
+			return i + 1
+		}
+	}
+	return 0
+}
+
 func getLive(matchID int64) *matchLive {
 	v, _ := liveMatches.LoadOrStore(matchID, &matchLive{})
 	return v.(*matchLive)
@@ -152,6 +284,11 @@ func main() {
 	mux.HandleFunc("GET /replays", handleListReplays)
 	mux.HandleFunc("GET /replays/{name}", handleGetReplay)
 	mux.HandleFunc("GET /matches/{id}/live", handleMatchLive)
+	mux.HandleFunc("GET /queue", handleQueueStatus)
+	mux.HandleFunc("GET /bots/{id}/stats", handleBotStats)
+	mux.HandleFunc("GET /bots/health", handleBotHealth)
+
+	startHealthProbe()
 
 	port := "9090"
 	log.Printf("Arena API listening on :%s", port)
@@ -203,9 +340,9 @@ func initDB() {
 	)`)
 
 	// clean up zombie matches left from previous crash/restart
-	res, _ := db.Exec(`UPDATE matches SET status='error', finished_at=CURRENT_TIMESTAMP WHERE status='running'`)
+	res, _ := db.Exec(`UPDATE matches SET status='error', finished_at=CURRENT_TIMESTAMP WHERE status IN ('running', 'queued')`)
 	if n, _ := res.RowsAffected(); n > 0 {
-		log.Printf("cleaned up %d zombie running matches", n)
+		log.Printf("cleaned up %d zombie running/queued matches", n)
 	}
 
 	// import maps from filesystem into DB (skip if name already exists)
@@ -506,7 +643,7 @@ func handleStartMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := db.Exec(
-		`INSERT INTO matches (bot_a_id, bot_b_id, seed, map_path, status, latency_a, latency_b) VALUES (?, ?, ?, ?, 'running', ?, ?)`,
+		`INSERT INTO matches (bot_a_id, bot_b_id, seed, map_path, status, latency_a, latency_b) VALUES (?, ?, ?, ?, 'queued', ?, ?)`,
 		req.BotAID, req.BotBID, seed, mapPathPtr, latA, latB,
 	)
 	if err != nil {
@@ -516,12 +653,19 @@ func handleStartMatch(w http.ResponseWriter, r *http.Request) {
 	}
 	matchID, _ := res.LastInsertId()
 
-	log.Printf("[match %d] started: %s(%s, %dms) vs %s(%s, %dms) seed=%d map=%s",
+	log.Printf("[match %d] queued: %s(%s, %dms) vs %s(%s, %dms) seed=%d map=%s",
 		matchID, botAName, botAURL, latA, botBName, botBURL, latB, seed, mapLabel)
 
-	go runMatch(matchID, botAURL, botBURL, seed, runnerMapPath)
+	pos := enqueueMatch(matchJob{
+		MatchID:       matchID,
+		BotAURL:       botAURL,
+		BotBURL:       botBURL,
+		Seed:          seed,
+		RunnerMapPath: runnerMapPath,
+	})
 
-	writeJSON(w, 202, map[string]any{"id": matchID, "seed": seed, "status": "running", "latency_a": latA, "latency_b": latB})
+	running, queued := queueStatus()
+	writeJSON(w, 202, map[string]any{"id": matchID, "seed": seed, "status": "queued", "queue_position": pos, "queue_running": running, "queue_waiting": queued, "latency_a": latA, "latency_b": latB})
 }
 
 func runMatch(matchID int64, botAURL, botBURL string, seed int64, mapPath string) {
@@ -876,12 +1020,9 @@ func mustJSON(s string) string {
 	return string(b)
 }
 
-// ── POST /maps (admin) ──────────────────────────────────────────────────────
+// ── POST /maps ───────────────────────────────────────────────────────────────
 
 func handleCreateMap(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	var req struct {
 		Name        string          `json:"name"`
 		Description string          `json:"description"`
@@ -911,12 +1052,9 @@ func handleCreateMap(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]any{"id": id, "name": req.Name})
 }
 
-// ── PUT /maps/{id} (admin) ──────────────────────────────────────────────────
+// ── PUT /maps/{id} ──────────────────────────────────────────────────────────
 
 func handleUpdateMap(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeErr(w, 400, "invalid id")
@@ -946,12 +1084,9 @@ func handleUpdateMap(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// ── DELETE /maps/{id} (admin) ────────────────────────────────────────────────
+// ── DELETE /maps/{id} ────────────────────────────────────────────────────────
 
 func handleDeleteMap(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeErr(w, 400, "invalid id")
@@ -1115,6 +1250,183 @@ func handleGetReplay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	w.Write(data)
+}
+
+// ── GET /queue ──────────────────────────────────────────────────────────────
+
+func handleQueueStatus(w http.ResponseWriter, r *http.Request) {
+	running, queued := queueStatus()
+	writeJSON(w, 200, map[string]any{"running": running, "queued": queued, "max_concurrent": maxRunningMatches})
+}
+
+// ── GET /bots/{id}/stats ────────────────────────────────────────────────────
+
+func handleBotStats(w http.ResponseWriter, r *http.Request) {
+	botID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, 400, "invalid id")
+		return
+	}
+
+	var botName, owner string
+	if db.QueryRow(`SELECT name, owner FROM bots WHERE id=?`, botID).Scan(&botName, &owner) != nil {
+		writeErr(w, 404, "bot not found")
+		return
+	}
+
+	// recent matches (last 20)
+	type recentMatch struct {
+		ID       int64   `json:"id"`
+		Opponent string  `json:"opponent"`
+		MyScore  int     `json:"my_score"`
+		OppScore int     `json:"opp_score"`
+		Won      bool    `json:"won"`
+		Draw     bool    `json:"draw"`
+		MapPath  *string `json:"map_path"`
+		Seed     int64   `json:"seed"`
+	}
+	rows, err := db.Query(`
+		SELECT m.id, m.seed, m.map_path, m.winner, m.score_a, m.score_b,
+		       m.bot_a_id, ba.name, bb.name
+		FROM matches m
+		JOIN bots ba ON ba.id = m.bot_a_id
+		JOIN bots bb ON bb.id = m.bot_b_id
+		WHERE m.status='done' AND (m.bot_a_id=? OR m.bot_b_id=?)
+		ORDER BY m.id DESC LIMIT 20
+	`, botID, botID)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+	var recent []recentMatch
+	for rows.Next() {
+		var id, botAID, seed int64
+		var winner sql.NullString
+		var mapPath *string
+		var scoreA, scoreB int
+		var nameA, nameB string
+		rows.Scan(&id, &seed, &mapPath, &winner, &scoreA, &scoreB, &botAID, &nameA, &nameB)
+		isAlpha := botAID == botID
+		myScore, oppScore := scoreA, scoreB
+		opponent := nameB
+		if !isAlpha {
+			myScore, oppScore = scoreB, scoreA
+			opponent = nameA
+		}
+		won := (isAlpha && winner.String == "Alpha") || (!isAlpha && winner.String == "Beta")
+		draw := !winner.Valid || winner.String == ""
+		recent = append(recent, recentMatch{ID: id, Opponent: opponent, MyScore: myScore, OppScore: oppScore, Won: won, Draw: draw, MapPath: mapPath, Seed: seed})
+	}
+
+	// per-map stats
+	type mapStat struct {
+		MapPath  string  `json:"map_path"`
+		Wins     int     `json:"wins"`
+		Losses   int     `json:"losses"`
+		Draws    int     `json:"draws"`
+		Total    int     `json:"total"`
+		WinRate  float64 `json:"win_rate"`
+		AvgScore float64 `json:"avg_score"`
+	}
+	mapRows, _ := db.Query(`
+		SELECT COALESCE(m.map_path, 'random'),
+			SUM(CASE WHEN (m.bot_a_id=? AND m.winner='Alpha') OR (m.bot_b_id=? AND m.winner='Beta') THEN 1 ELSE 0 END),
+			SUM(CASE WHEN (m.bot_a_id=? AND m.winner='Beta') OR (m.bot_b_id=? AND m.winner='Alpha') THEN 1 ELSE 0 END),
+			SUM(CASE WHEN m.winner IS NULL THEN 1 ELSE 0 END),
+			COUNT(*),
+			AVG(CASE WHEN m.bot_a_id=? THEN m.score_a ELSE m.score_b END)
+		FROM matches m
+		WHERE m.status='done' AND (m.bot_a_id=? OR m.bot_b_id=?)
+		GROUP BY COALESCE(m.map_path, 'random')
+	`, botID, botID, botID, botID, botID, botID, botID)
+	var mapStats []mapStat
+	if mapRows != nil {
+		defer mapRows.Close()
+		for mapRows.Next() {
+			var ms mapStat
+			var avgScore sql.NullFloat64
+			mapRows.Scan(&ms.MapPath, &ms.Wins, &ms.Losses, &ms.Draws, &ms.Total, &avgScore)
+			if avgScore.Valid {
+				ms.AvgScore = avgScore.Float64
+			}
+			if ms.Total > 0 {
+				ms.WinRate = float64(ms.Wins) / float64(ms.Total)
+			}
+			mapStats = append(mapStats, ms)
+		}
+	}
+
+	// per-opponent stats
+	type oppStat struct {
+		Opponent string  `json:"opponent"`
+		Wins     int     `json:"wins"`
+		Losses   int     `json:"losses"`
+		Draws    int     `json:"draws"`
+		Total    int     `json:"total"`
+		WinRate  float64 `json:"win_rate"`
+	}
+	oppRows, _ := db.Query(`
+		SELECT
+			CASE WHEN m.bot_a_id=? THEN bb.name ELSE ba.name END AS opp_name,
+			SUM(CASE WHEN (m.bot_a_id=? AND m.winner='Alpha') OR (m.bot_b_id=? AND m.winner='Beta') THEN 1 ELSE 0 END),
+			SUM(CASE WHEN (m.bot_a_id=? AND m.winner='Beta') OR (m.bot_b_id=? AND m.winner='Alpha') THEN 1 ELSE 0 END),
+			SUM(CASE WHEN m.winner IS NULL THEN 1 ELSE 0 END),
+			COUNT(*)
+		FROM matches m
+		JOIN bots ba ON ba.id = m.bot_a_id
+		JOIN bots bb ON bb.id = m.bot_b_id
+		WHERE m.status='done' AND (m.bot_a_id=? OR m.bot_b_id=?)
+		GROUP BY opp_name
+	`, botID, botID, botID, botID, botID, botID, botID)
+	var oppStats []oppStat
+	if oppRows != nil {
+		defer oppRows.Close()
+		for oppRows.Next() {
+			var os oppStat
+			oppRows.Scan(&os.Opponent, &os.Wins, &os.Losses, &os.Draws, &os.Total)
+			if os.Total > 0 {
+				os.WinRate = float64(os.Wins) / float64(os.Total)
+			}
+			oppStats = append(oppStats, os)
+		}
+	}
+
+	// score trend (last 50 matches)
+	type scoreTrend struct {
+		MatchID int64 `json:"match_id"`
+		Score   int   `json:"score"`
+		Won     bool  `json:"won"`
+	}
+	trendRows, _ := db.Query(`
+		SELECT m.id,
+			CASE WHEN m.bot_a_id=? THEN m.score_a ELSE m.score_b END,
+			CASE WHEN (m.bot_a_id=? AND m.winner='Alpha') OR (m.bot_b_id=? AND m.winner='Beta') THEN 1 ELSE 0 END
+		FROM matches m
+		WHERE m.status='done' AND (m.bot_a_id=? OR m.bot_b_id=?)
+		ORDER BY m.id DESC LIMIT 50
+	`, botID, botID, botID, botID, botID)
+	var trend []scoreTrend
+	if trendRows != nil {
+		defer trendRows.Close()
+		for trendRows.Next() {
+			var t scoreTrend
+			var wonInt int
+			trendRows.Scan(&t.MatchID, &t.Score, &wonInt)
+			t.Won = wonInt == 1
+			trend = append(trend, t)
+		}
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"bot_id":    botID,
+		"bot_name":  botName,
+		"owner":     owner,
+		"recent":    recent,
+		"map_stats": mapStats,
+		"opp_stats": oppStats,
+		"trend":     trend,
+	})
 }
 
 // ── GET /matches/{id}/live (SSE) ─────────────────────────────────────────────

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { fetchMaps, fetchMapDetail, createMap, updateMap, deleteMap, type MapInfo, type MapDetail } from "@/lib/api";
 import {
   TILE_SIZE, CANVAS_SCALE,
@@ -12,7 +13,6 @@ export default function MapsPage() {
   const [maps, setMaps] = useState<MapInfo[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<MapDetail | null>(null);
-  const [adminToken, setAdminToken] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // editor state
@@ -27,10 +27,9 @@ export default function MapsPage() {
   // preview from editor input
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setAdminToken(params.get("token"));
-  }, []);
+  const searchParams = useSearchParams();
+  const qs = searchParams.toString();
+  const qsSuffix = qs ? `?${qs}` : "";
 
   async function reload() {
     const m = await fetchMaps();
@@ -89,7 +88,6 @@ export default function MapsPage() {
   }
 
   async function handleSave() {
-    if (!adminToken) { setEditMsg("需要管理员权限"); return; }
     const lines = editLayout.split("\n").filter(l => l.length > 0);
     if (!editName || lines.length === 0) { setEditMsg("名称和布局不能为空"); return; }
     let cabs: Record<string, number> = {};
@@ -97,13 +95,13 @@ export default function MapsPage() {
 
     try {
       if (creating) {
-        const res = await createMap({ name: editName, description: editDesc, layout: lines, cabinets: cabs }, adminToken);
+        const res = await createMap({ name: editName, description: editDesc, layout: lines, cabinets: cabs });
         setEditMsg("创建成功");
         setCreating(false);
         await reload();
         setSelectedId(res.id);
       } else if (editing && selectedId) {
-        await updateMap(selectedId, { name: editName, description: editDesc, layout: lines, cabinets: cabs }, adminToken);
+        await updateMap(selectedId, { name: editName, description: editDesc, layout: lines, cabinets: cabs });
         setEditMsg("保存成功");
         setEditing(false);
         fetchMapDetail(selectedId).then(setDetail);
@@ -114,10 +112,10 @@ export default function MapsPage() {
   }
 
   async function handleDelete() {
-    if (!adminToken || !selectedId) return;
+    if (!selectedId) return;
     if (!confirm("确认删除这张地图？")) return;
     try {
-      await deleteMap(selectedId, adminToken);
+      await deleteMap(selectedId);
       setSelectedId(null);
       setDetail(null);
       setEditing(false);
@@ -144,12 +142,10 @@ export default function MapsPage() {
             </h1>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <a href="/arena" className="control-button" style={{ textDecoration: "none", color: "var(--muted)", opacity: 0.6 }}>排行榜</a>
-            {adminToken && (
-              <button onClick={startCreate} className="control-button" style={{ background: "rgba(25,225,255,0.1)", borderColor: "var(--alpha)", color: "var(--alpha)" }}>
-                新建地图
-              </button>
-            )}
+            <a href={`/arena${qsSuffix}`} className="control-button" style={{ textDecoration: "none", color: "var(--muted)", opacity: 0.6 }}>排行榜</a>
+            <button onClick={startCreate} className="control-button" style={{ background: "rgba(25,225,255,0.1)", borderColor: "var(--alpha)", color: "var(--alpha)" }}>
+              新建地图
+            </button>
           </div>
         </div>
 
@@ -231,12 +227,10 @@ export default function MapsPage() {
                   {cabinetEntries.length > 0 && <span> &nbsp; 机柜: {cabinetEntries.length} 个</span>}
                 </p>
               </div>
-              {adminToken && (
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={startEdit} className="control-button" style={{ fontSize: "0.78rem", color: "var(--alpha)", borderColor: "var(--alpha)" }}>编辑</button>
-                  <button onClick={handleDelete} className="control-button" style={{ fontSize: "0.78rem", color: "var(--danger, #ff4d6a)", borderColor: "var(--danger, #ff4d6a)" }}>删除</button>
-                </div>
-              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={startEdit} className="control-button" style={{ fontSize: "0.78rem", color: "var(--alpha)", borderColor: "var(--alpha)" }}>编辑</button>
+                <button onClick={handleDelete} className="control-button" style={{ fontSize: "0.78rem", color: "var(--danger, #ff4d6a)", borderColor: "var(--danger, #ff4d6a)" }}>删除</button>
+              </div>
             </div>
 
             <div style={{ overflow: "auto", borderRadius: 12, border: "1px solid var(--line)", padding: 8, background: "#071320" }}>

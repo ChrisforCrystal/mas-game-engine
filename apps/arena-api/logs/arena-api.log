@@ -6584,3 +6584,306 @@ Done  winner=Draw  alpha=0  beta=0  replay=./artifacts/replays/match-800000-1776
 2026/04/18 03:05:23 imported map: 监狱（牢房图）
 2026/04/18 03:05:23 imported map: 竞技场（钻石图）
 2026/04/18 03:05:23 Arena API listening on :9090
+2026/04/19 10:34:51 [match] ping: y1=33ms(err=<nil>) 111=9ms(err=<nil>)
+2026/04/19 10:34:51 [match 107] started: y1(http://localhost:18080, 33ms) vs 111(http://localhost:18081, 9ms) seed=217000 map=
+2026/04/19 10:34:51 [match 107] launching runner: alpha=http://localhost:18080 beta=http://localhost:18081 seed=217000 map=
+2026/04/19 10:34:51 [match 107] runner binary: /Users/jiwn2/dev/masallsome/mascompelete/apps/arena-api/http-match
+2026/04/19 10:34:51 [match 107] working dir: /Users/jiwn2/dev/masallsome/mascompelete
+2026/04/19 10:34:51 [match 107] process started (pid=64659)
+2026/04/19 10:34:51 [match 107] stderr: log file: logs/match-217000-1776566091369.log
+2026/04/19 10:34:51 [match 107] stderr: === http-match start ===
+2026/04/19 10:34:51 [match 107] stderr:   match_id: match-217000-1776566091369
+2026/04/19 10:34:51 [match 107] stderr:   alpha:    http://localhost:18080
+2026/04/19 10:34:51 [match 107] stderr:   beta:     http://localhost:18081
+2026/04/19 10:34:51 [match 107] stderr:   seed:     217000
+2026/04/19 10:34:51 [match 107] stderr:   map:      (random)
+2026/04/19 10:34:51 [match 107] stderr: --- init phase ---
+2026/04/19 10:34:51 [match 107] stderr: [Alpha] POST /init OK (5.6ms)
+2026/04/19 10:34:51 [match 107] stderr: [Beta] POST /init OK (5.1ms)
+2026/04/19 10:34:51 [match 107] stderr: --- init done (11ms) ---
+2026/04/19 10:34:51 [match 107] stderr: --- match phase ---
+2026/04/19 10:34:51 [match 107] stderr:   turn 50/500 alpha=1ms total=1ms elapsed=0.2s slow_turns=0
+2026/04/19 10:34:51 [match 107] stderr:   turn 100/500 alpha=1ms total=5ms elapsed=0.3s slow_turns=0
+2026/04/19 10:34:51 [match 107] stderr:   turn 150/500 alpha=2ms total=3ms elapsed=0.4s slow_turns=0
+2026/04/19 10:34:51 [match 107] stderr:   turn 200/500 alpha=1ms total=2ms elapsed=0.5s slow_turns=0
+2026/04/19 10:34:52 [match 107] stderr:   turn 250/500 alpha=1ms total=2ms elapsed=0.7s slow_turns=0
+2026/04/19 10:34:52 [match 107] stderr:   turn 300/500 alpha=1ms total=2ms elapsed=0.8s slow_turns=0
+2026/04/19 10:34:52 [match 107] stderr:   turn 350/500 alpha=1ms total=3ms elapsed=0.9s slow_turns=0
+2026/04/19 10:34:52 [match 107] stderr:   turn 400/500 alpha=1ms total=1ms elapsed=1.0s slow_turns=0
+2026/04/19 10:34:52 [match] ping: y1=2ms(err=<nil>) 111=1ms(err=<nil>)
+2026/04/19 10:34:52 [match 108] started: y1(http://localhost:18080, 2ms) vs 111(http://localhost:18081, 1ms) seed=533000 map=
+2026/04/19 10:34:52 [match 108] launching runner: alpha=http://localhost:18080 beta=http://localhost:18081 seed=533000 map=
+2026/04/19 10:34:52 [match 108] runner binary: /Users/jiwn2/dev/masallsome/mascompelete/apps/arena-api/http-match
+2026/04/19 10:34:52 [match 108] working dir: /Users/jiwn2/dev/masallsome/mascompelete
+2026/04/19 10:34:52 [match 108] process started (pid=64682)
+2026/04/19 10:34:52 [match 108] stderr: log file: logs/match-533000-1776566092489.log
+2026/04/19 10:34:52 [match 108] stderr: === http-match start ===
+2026/04/19 10:34:52 [match 108] stderr:   match_id: match-533000-1776566092489
+2026/04/19 10:34:52 [match 108] stderr:   alpha:    http://localhost:18080
+2026/04/19 10:34:52 [match 108] stderr:   beta:     http://localhost:18081
+2026/04/19 10:34:52 [match 108] stderr:   seed:     533000
+2026/04/19 10:34:52 [match 108] stderr:   map:      (random)
+2026/04/19 10:34:52 [match 108] stderr: --- init phase ---
+2026/04/19 10:34:52 [match 108] stderr: [Alpha] POST /init OK (2.4ms)
+2026/04/19 10:34:52 [match 108] stderr: [Beta] POST /init OK (1.6ms)
+2026/04/19 10:34:52 [match 108] stderr: --- init done (4ms) ---
+2026/04/19 10:34:52 [match 108] stderr: --- match phase ---
+2026/04/19 10:34:52 [match 107] stderr:   turn 450/500 alpha=3ms total=5ms elapsed=1.1s slow_turns=0
+2026/04/19 10:34:52 [match 108] stderr:   turn 50/500 alpha=2ms total=4ms elapsed=0.2s slow_turns=0
+2026/04/19 10:34:52 [match 107] stderr:   turn 500/500 alpha=1ms total=2ms elapsed=1.3s slow_turns=0
+2026/04/19 10:34:52 [match 107] stderr: match complete: 500 turns in 1.3s, 0 slow turns (>400ms)
+2026/04/19 10:34:52 [match 107] stderr: --- match done (1290ms, 500 turns) ---
+2026/04/19 10:34:52 [match 107] stderr: --- finish phase ---
+2026/04/19 10:34:52 [match 107] stderr: [Alpha] POST /finish OK (1.1ms)
+2026/04/19 10:34:52 [match 107] stderr: [Beta] POST /finish OK (0.9ms)
+2026/04/19 10:34:52 [match 107] stderr: --- finish done (2ms) ---
+2026/04/19 10:34:52 [match 107] stderr: === http-match end (1370ms total) winner=Beta score=132:239 ===
+2026/04/19 10:34:52 [match 107] DONE in 1.383325667s: winner=Beta score=132-239 replay=./artifacts/replays/match-217000-1776566091369.json
+2026/04/19 10:34:52 [match 108] stderr:   turn 100/500 alpha=1ms total=2ms elapsed=0.3s slow_turns=0
+2026/04/19 10:34:52 [match 108] stderr:   turn 150/500 alpha=1ms total=2ms elapsed=0.4s slow_turns=0
+2026/04/19 10:34:53 [match] ping: y1=1ms(err=<nil>) 111=1ms(err=<nil>)
+2026/04/19 10:34:53 [match 109] started: y1(http://localhost:18080, 1ms) vs 111(http://localhost:18081, 1ms) seed=816000 map=
+2026/04/19 10:34:53 [match 109] launching runner: alpha=http://localhost:18080 beta=http://localhost:18081 seed=816000 map=
+2026/04/19 10:34:53 [match 109] runner binary: /Users/jiwn2/dev/masallsome/mascompelete/apps/arena-api/http-match
+2026/04/19 10:34:53 [match 109] working dir: /Users/jiwn2/dev/masallsome/mascompelete
+2026/04/19 10:34:53 [match 109] process started (pid=64710)
+2026/04/19 10:34:53 [match 109] stderr: log file: logs/match-816000-1776566093008.log
+2026/04/19 10:34:53 [match 109] stderr: === http-match start ===
+2026/04/19 10:34:53 [match 109] stderr:   match_id: match-816000-1776566093008
+2026/04/19 10:34:53 [match 109] stderr:   alpha:    http://localhost:18080
+2026/04/19 10:34:53 [match 109] stderr:   beta:     http://localhost:18081
+2026/04/19 10:34:53 [match 109] stderr:   seed:     816000
+2026/04/19 10:34:53 [match 109] stderr:   map:      (random)
+2026/04/19 10:34:53 [match 109] stderr: --- init phase ---
+2026/04/19 10:34:53 [match 109] stderr: [Alpha] POST /init OK (3.5ms)
+2026/04/19 10:34:53 [match 109] stderr: [Beta] POST /init OK (2.0ms)
+2026/04/19 10:34:53 [match 109] stderr: --- init done (6ms) ---
+2026/04/19 10:34:53 [match 109] stderr: --- match phase ---
+2026/04/19 10:34:53 [match 108] stderr:   turn 200/500 alpha=9ms total=12ms elapsed=0.6s slow_turns=0
+2026/04/19 10:34:53 [match 109] stderr:   turn 50/500 alpha=1ms total=3ms elapsed=0.2s slow_turns=0
+2026/04/19 10:34:53 [match 108] stderr:   turn 250/500 alpha=1ms total=2ms elapsed=0.8s slow_turns=0
+2026/04/19 10:34:53 [match] ping: y1=2ms(err=<nil>) 111=1ms(err=<nil>)
+2026/04/19 10:34:53 [match 110] started: y1(http://localhost:18080, 2ms) vs 111(http://localhost:18081, 1ms) seed=204000 map=
+2026/04/19 10:34:53 [match 110] launching runner: alpha=http://localhost:18080 beta=http://localhost:18081 seed=204000 map=
+2026/04/19 10:34:53 [match 110] runner binary: /Users/jiwn2/dev/masallsome/mascompelete/apps/arena-api/http-match
+2026/04/19 10:34:53 [match 110] working dir: /Users/jiwn2/dev/masallsome/mascompelete
+2026/04/19 10:34:53 [match 110] process started (pid=64749)
+2026/04/19 10:34:53 [match 110] stderr: log file: logs/match-204000-1776566093265.log
+2026/04/19 10:34:53 [match 110] stderr: === http-match start ===
+2026/04/19 10:34:53 [match 110] stderr:   match_id: match-204000-1776566093265
+2026/04/19 10:34:53 [match 110] stderr:   alpha:    http://localhost:18080
+2026/04/19 10:34:53 [match 110] stderr:   beta:     http://localhost:18081
+2026/04/19 10:34:53 [match 110] stderr:   seed:     204000
+2026/04/19 10:34:53 [match 110] stderr:   map:      (random)
+2026/04/19 10:34:53 [match 110] stderr: --- init phase ---
+2026/04/19 10:34:53 [match 110] stderr: [Alpha] POST /init OK (3.6ms)
+2026/04/19 10:34:53 [match 110] stderr: [Beta] POST /init OK (4.5ms)
+2026/04/19 10:34:53 [match 110] stderr: --- init done (8ms) ---
+2026/04/19 10:34:53 [match 110] stderr: --- match phase ---
+2026/04/19 10:34:53 [match 109] stderr:   turn 100/500 alpha=1ms total=2ms elapsed=0.4s slow_turns=0
+2026/04/19 10:34:53 [match 108] stderr:   turn 300/500 alpha=1ms total=2ms elapsed=0.9s slow_turns=0
+2026/04/19 10:34:53 [match] ping: y1=2ms(err=<nil>) 111=1ms(err=<nil>)
+2026/04/19 10:34:53 [match 110] stderr:   turn 50/500 alpha=2ms total=3ms elapsed=0.2s slow_turns=0
+2026/04/19 10:34:53 [match 109] stderr:   turn 150/500 alpha=1ms total=2ms elapsed=0.5s slow_turns=0
+2026/04/19 10:34:53 [match 108] stderr:   turn 350/500 alpha=1ms total=2ms elapsed=1.1s slow_turns=0
+2026/04/19 10:34:53 [match 110] stderr:   turn 100/500 alpha=1ms total=1ms elapsed=0.3s slow_turns=0
+2026/04/19 10:34:53 [match 109] stderr:   turn 200/500 alpha=3ms total=5ms elapsed=0.6s slow_turns=0
+2026/04/19 10:34:53 [match] ping: y1=2ms(err=<nil>) 111=1ms(err=<nil>)
+2026/04/19 10:34:53 [match 108] stderr:   turn 400/500 alpha=2ms total=3ms elapsed=1.2s slow_turns=0
+2026/04/19 10:34:53 [match 110] stderr:   turn 150/500 alpha=1ms total=3ms elapsed=0.4s slow_turns=0
+2026/04/19 10:34:53 [match 109] stderr:   turn 250/500 alpha=1ms total=3ms elapsed=0.7s slow_turns=0
+2026/04/19 10:34:53 [match] ping: y1=0ms(err=<nil>) 111=1ms(err=<nil>)
+2026/04/19 10:34:53 [match 108] stderr:   turn 450/500 alpha=1ms total=2ms elapsed=1.3s slow_turns=0
+2026/04/19 10:34:53 [match 110] stderr:   turn 200/500 alpha=1ms total=2ms elapsed=0.6s slow_turns=0
+2026/04/19 10:34:53 [match 109] stderr:   turn 300/500 alpha=1ms total=2ms elapsed=0.9s slow_turns=0
+2026/04/19 10:34:53 [match 108] stderr:   turn 500/500 alpha=1ms total=2ms elapsed=1.5s slow_turns=0
+2026/04/19 10:34:53 [match 108] stderr: match complete: 500 turns in 1.5s, 0 slow turns (>400ms)
+2026/04/19 10:34:53 [match 108] stderr: --- match done (1457ms, 500 turns) ---
+2026/04/19 10:34:53 [match 108] stderr: --- finish phase ---
+2026/04/19 10:34:53 [match 108] stderr: [Alpha] POST /finish OK (1.5ms)
+2026/04/19 10:34:53 [match 108] stderr: [Beta] POST /finish OK (1.5ms)
+2026/04/19 10:34:53 [match 108] stderr: --- finish done (3ms) ---
+2026/04/19 10:34:53 [match] ping: y1=1ms(err=<nil>) 111=0ms(err=<nil>)
+2026/04/19 10:34:54 [match 110] stderr:   turn 250/500 alpha=1ms total=3ms elapsed=0.7s slow_turns=0
+2026/04/19 10:34:54 [match 108] stderr: === http-match end (1542ms total) winner=Beta score=36:182 ===
+2026/04/19 10:34:54 [match 108] DONE in 1.558625541s: winner=Beta score=36-182 replay=./artifacts/replays/match-533000-1776566092489.json
+2026/04/19 10:34:54 [match 109] stderr:   turn 350/500 alpha=2ms total=3ms elapsed=1.1s slow_turns=0
+2026/04/19 10:34:54 [match] ping: y1=1ms(err=<nil>) 111=0ms(err=<nil>)
+2026/04/19 10:34:54 [match 111] started: y1(http://localhost:18080, 1ms) vs 111(http://localhost:18081, 0ms) seed=418000 map=
+2026/04/19 10:34:54 [match 111] launching runner: alpha=http://localhost:18080 beta=http://localhost:18081 seed=418000 map=
+2026/04/19 10:34:54 [match 111] runner binary: /Users/jiwn2/dev/masallsome/mascompelete/apps/arena-api/http-match
+2026/04/19 10:34:54 [match 111] working dir: /Users/jiwn2/dev/masallsome/mascompelete
+2026/04/19 10:34:54 [match 111] process started (pid=64761)
+2026/04/19 10:34:54 [match 111] stderr: log file: logs/match-418000-1776566094130.log
+2026/04/19 10:34:54 [match 111] stderr: === http-match start ===
+2026/04/19 10:34:54 [match 111] stderr:   match_id: match-418000-1776566094130
+2026/04/19 10:34:54 [match 111] stderr:   alpha:    http://localhost:18080
+2026/04/19 10:34:54 [match 111] stderr:   beta:     http://localhost:18081
+2026/04/19 10:34:54 [match 111] stderr:   seed:     418000
+2026/04/19 10:34:54 [match 111] stderr:   map:      (random)
+2026/04/19 10:34:54 [match 111] stderr: --- init phase ---
+2026/04/19 10:34:54 [match 111] stderr: [Alpha] POST /init OK (4.6ms)
+2026/04/19 10:34:54 [match 111] stderr: [Beta] POST /init OK (3.0ms)
+2026/04/19 10:34:54 [match 111] stderr: --- init done (8ms) ---
+2026/04/19 10:34:54 [match 111] stderr: --- match phase ---
+2026/04/19 10:34:54 [match 110] stderr:   turn 300/500 alpha=3ms total=4ms elapsed=0.9s slow_turns=0
+2026/04/19 10:34:54 [match 109] stderr:   turn 400/500 alpha=1ms total=2ms elapsed=1.2s slow_turns=0
+2026/04/19 10:34:54 [match 111] stderr:   turn 50/500 alpha=1ms total=3ms elapsed=0.1s slow_turns=0
+2026/04/19 10:34:54 [match 110] stderr:   turn 350/500 alpha=2ms total=4ms elapsed=1.0s slow_turns=0
+2026/04/19 10:34:54 [match 109] stderr:   turn 450/500 alpha=3ms total=4ms elapsed=1.4s slow_turns=0
+2026/04/19 10:34:54 [match 111] stderr:   turn 100/500 alpha=2ms total=4ms elapsed=0.3s slow_turns=0
+2026/04/19 10:34:54 [match 110] stderr:   turn 400/500 alpha=2ms total=5ms elapsed=1.2s slow_turns=0
+2026/04/19 10:34:54 [match 109] stderr:   turn 500/500 alpha=1ms total=2ms elapsed=1.5s slow_turns=0
+2026/04/19 10:34:54 [match 109] stderr: match complete: 500 turns in 1.5s, 0 slow turns (>400ms)
+2026/04/19 10:34:54 [match 109] stderr: --- match done (1495ms, 500 turns) ---
+2026/04/19 10:34:54 [match 109] stderr: --- finish phase ---
+2026/04/19 10:34:54 [match 109] stderr: [Alpha] POST /finish OK (1.2ms)
+2026/04/19 10:34:54 [match 109] stderr: [Beta] POST /finish OK (0.8ms)
+2026/04/19 10:34:54 [match 109] stderr: --- finish done (2ms) ---
+2026/04/19 10:34:54 [match 109] stderr: === http-match end (1572ms total) winner=Alpha score=67:37 ===
+2026/04/19 10:34:54 [match 109] DONE in 1.58105525s: winner=Alpha score=67-37 replay=./artifacts/replays/match-816000-1776566093008.json
+2026/04/19 10:34:54 [match 111] stderr:   turn 150/500 alpha=2ms total=3ms elapsed=0.5s slow_turns=0
+2026/04/19 10:34:54 [match 110] stderr:   turn 450/500 alpha=1ms total=2ms elapsed=1.3s slow_turns=0
+2026/04/19 10:34:54 [match 111] stderr:   turn 200/500 alpha=1ms total=2ms elapsed=0.6s slow_turns=0
+2026/04/19 10:34:54 [match 110] stderr:   turn 500/500 alpha=1ms total=1ms elapsed=1.5s slow_turns=0
+2026/04/19 10:34:54 [match 110] stderr: match complete: 500 turns in 1.5s, 0 slow turns (>400ms)
+2026/04/19 10:34:54 [match 110] stderr: --- match done (1454ms, 500 turns) ---
+2026/04/19 10:34:54 [match 110] stderr: --- finish phase ---
+2026/04/19 10:34:54 [match 110] stderr: [Alpha] POST /finish OK (1.0ms)
+2026/04/19 10:34:54 [match 110] stderr: [Beta] POST /finish OK (0.8ms)
+2026/04/19 10:34:54 [match 110] stderr: --- finish done (2ms) ---
+2026/04/19 10:34:54 [match 110] stderr: === http-match end (1514ms total) winner=Alpha score=221:0 ===
+2026/04/19 10:34:54 [match 110] DONE in 1.521649959s: winner=Alpha score=221-0 replay=./artifacts/replays/match-204000-1776566093265.json
+2026/04/19 10:34:54 [match 111] stderr:   turn 250/500 alpha=1ms total=2ms elapsed=0.7s slow_turns=0
+2026/04/19 10:34:54 [match] ping: y1=3ms(err=<nil>) 111=1ms(err=<nil>)
+2026/04/19 10:34:54 [match 112] started: y1(http://localhost:18080, 3ms) vs 111(http://localhost:18081, 1ms) seed=374000 map=
+2026/04/19 10:34:54 [match 112] launching runner: alpha=http://localhost:18080 beta=http://localhost:18081 seed=374000 map=
+2026/04/19 10:34:54 [match 112] runner binary: /Users/jiwn2/dev/masallsome/mascompelete/apps/arena-api/http-match
+2026/04/19 10:34:54 [match 112] working dir: /Users/jiwn2/dev/masallsome/mascompelete
+2026/04/19 10:34:54 [match 112] process started (pid=64768)
+2026/04/19 10:34:54 [match 112] stderr: log file: logs/match-374000-1776566094934.log
+2026/04/19 10:34:54 [match 112] stderr: === http-match start ===
+2026/04/19 10:34:54 [match 112] stderr:   match_id: match-374000-1776566094934
+2026/04/19 10:34:54 [match 112] stderr:   alpha:    http://localhost:18080
+2026/04/19 10:34:54 [match 112] stderr:   beta:     http://localhost:18081
+2026/04/19 10:34:54 [match 112] stderr:   seed:     374000
+2026/04/19 10:34:54 [match 112] stderr:   map:      (random)
+2026/04/19 10:34:54 [match 112] stderr: --- init phase ---
+2026/04/19 10:34:54 [match 111] stderr:   turn 300/500 alpha=2ms total=6ms elapsed=0.8s slow_turns=0
+2026/04/19 10:34:54 [match 112] stderr: [Alpha] POST /init OK (5.7ms)
+2026/04/19 10:34:54 [match 112] stderr: [Beta] POST /init OK (1.7ms)
+2026/04/19 10:34:54 [match 112] stderr: --- init done (8ms) ---
+2026/04/19 10:34:54 [match 112] stderr: --- match phase ---
+2026/04/19 10:34:55 [match 111] stderr:   turn 350/500 alpha=1ms total=2ms elapsed=1.0s slow_turns=0
+2026/04/19 10:34:55 [match 112] stderr:   turn 50/500 alpha=1ms total=2ms elapsed=0.2s slow_turns=0
+2026/04/19 10:34:55 [match 111] stderr:   turn 400/500 alpha=1ms total=3ms elapsed=1.1s slow_turns=0
+2026/04/19 10:34:55 [match 112] stderr:   turn 100/500 alpha=2ms total=4ms elapsed=0.3s slow_turns=0
+2026/04/19 10:34:55 [match 111] stderr:   turn 450/500 alpha=1ms total=2ms elapsed=1.3s slow_turns=0
+2026/04/19 10:34:55 [match 112] stderr:   turn 150/500 alpha=1ms total=2ms elapsed=0.5s slow_turns=0
+2026/04/19 10:34:55 [match 111] stderr:   turn 500/500 alpha=1ms total=2ms elapsed=1.3s slow_turns=0
+2026/04/19 10:34:55 [match 111] stderr: match complete: 500 turns in 1.3s, 0 slow turns (>400ms)
+2026/04/19 10:34:55 [match 111] stderr: --- match done (1340ms, 500 turns) ---
+2026/04/19 10:34:55 [match 111] stderr: --- finish phase ---
+2026/04/19 10:34:55 [match 111] stderr: [Alpha] POST /finish OK (1.3ms)
+2026/04/19 10:34:55 [match 111] stderr: [Beta] POST /finish OK (0.6ms)
+2026/04/19 10:34:55 [match 111] stderr: --- finish done (2ms) ---
+2026/04/19 10:34:55 [match 112] stderr:   turn 200/500 alpha=1ms total=1ms elapsed=0.5s slow_turns=0
+2026/04/19 10:34:55 [match] ping: y1=1ms(err=<nil>) 111=1ms(err=<nil>)
+2026/04/19 10:34:55 [match 113] started: y1(http://localhost:18080, 1ms) vs 111(http://localhost:18081, 1ms) seed=860000 map=
+2026/04/19 10:34:55 [match 113] launching runner: alpha=http://localhost:18080 beta=http://localhost:18081 seed=860000 map=
+2026/04/19 10:34:55 [match 113] runner binary: /Users/jiwn2/dev/masallsome/mascompelete/apps/arena-api/http-match
+2026/04/19 10:34:55 [match 113] working dir: /Users/jiwn2/dev/masallsome/mascompelete
+2026/04/19 10:34:55 [match 113] process started (pid=64801)
+2026/04/19 10:34:55 [match 113] stderr: log file: logs/match-860000-1776566095504.log
+2026/04/19 10:34:55 [match 113] stderr: === http-match start ===
+2026/04/19 10:34:55 [match 113] stderr:   match_id: match-860000-1776566095504
+2026/04/19 10:34:55 [match 113] stderr:   alpha:    http://localhost:18080
+2026/04/19 10:34:55 [match 113] stderr:   beta:     http://localhost:18081
+2026/04/19 10:34:55 [match 113] stderr:   seed:     860000
+2026/04/19 10:34:55 [match 113] stderr:   map:      (random)
+2026/04/19 10:34:55 [match 113] stderr: --- init phase ---
+2026/04/19 10:34:55 [match 113] stderr: [Alpha] POST /init OK (3.6ms)
+2026/04/19 10:34:55 [match 113] stderr: [Beta] POST /init OK (1.7ms)
+2026/04/19 10:34:55 [match 113] stderr: --- init done (5ms) ---
+2026/04/19 10:34:55 [match 113] stderr: --- match phase ---
+2026/04/19 10:34:55 [match 111] stderr: === http-match end (1417ms total) winner=Alpha score=105:0 ===
+2026/04/19 10:34:55 [match 111] DONE in 1.426091291s: winner=Alpha score=105-0 replay=./artifacts/replays/match-418000-1776566094130.json
+2026/04/19 10:34:55 [match 112] stderr:   turn 250/500 alpha=1ms total=2ms elapsed=0.7s slow_turns=0
+2026/04/19 10:34:55 [match 113] stderr:   turn 50/500 alpha=1ms total=2ms elapsed=0.1s slow_turns=0
+2026/04/19 10:34:55 [match 112] stderr:   turn 300/500 alpha=1ms total=3ms elapsed=0.8s slow_turns=0
+2026/04/19 10:34:55 [match 113] stderr:   turn 100/500 alpha=1ms total=2ms elapsed=0.3s slow_turns=0
+2026/04/19 10:34:55 [match 112] stderr:   turn 350/500 alpha=1ms total=2ms elapsed=0.9s slow_turns=0
+2026/04/19 10:34:55 [match 113] stderr:   turn 150/500 alpha=1ms total=2ms elapsed=0.4s slow_turns=0
+2026/04/19 10:34:55 [match 112] stderr:   turn 400/500 alpha=1ms total=2ms elapsed=1.0s slow_turns=0
+2026/04/19 10:34:56 [match 113] stderr:   turn 200/500 alpha=1ms total=2ms elapsed=0.5s slow_turns=0
+2026/04/19 10:34:56 [match 112] stderr:   turn 450/500 alpha=2ms total=3ms elapsed=1.2s slow_turns=0
+2026/04/19 10:34:56 [match 113] stderr:   turn 250/500 alpha=3ms total=5ms elapsed=0.6s slow_turns=0
+2026/04/19 10:34:56 [match 112] stderr:   turn 500/500 alpha=1ms total=2ms elapsed=1.3s slow_turns=0
+2026/04/19 10:34:56 [match 112] stderr: match complete: 500 turns in 1.3s, 0 slow turns (>400ms)
+2026/04/19 10:34:56 [match 112] stderr: --- match done (1317ms, 500 turns) ---
+2026/04/19 10:34:56 [match 112] stderr: --- finish phase ---
+2026/04/19 10:34:56 [match 112] stderr: [Alpha] POST /finish OK (0.6ms)
+2026/04/19 10:34:56 [match 112] stderr: [Beta] POST /finish OK (0.9ms)
+2026/04/19 10:34:56 [match 112] stderr: --- finish done (2ms) ---
+2026/04/19 10:34:56 [match 113] stderr:   turn 300/500 alpha=1ms total=3ms elapsed=0.8s slow_turns=0
+2026/04/19 10:34:56 [match 112] stderr: === http-match end (1391ms total) winner=Draw score=0:0 ===
+2026/04/19 10:34:56 [match 112] DONE in 1.403148875s: winner=Draw score=0-0 replay=./artifacts/replays/match-374000-1776566094934.json
+2026/04/19 10:34:56 [match 113] stderr:   turn 350/500 alpha=2ms total=3ms elapsed=0.9s slow_turns=0
+2026/04/19 10:34:56 [match 113] stderr:   turn 400/500 alpha=1ms total=2ms elapsed=1.0s slow_turns=0
+2026/04/19 10:34:56 [match 113] stderr:   turn 450/500 alpha=1ms total=1ms elapsed=1.1s slow_turns=0
+2026/04/19 10:34:56 [match 113] stderr:   turn 500/500 alpha=1ms total=1ms elapsed=1.1s slow_turns=0
+2026/04/19 10:34:56 [match 113] stderr: match complete: 500 turns in 1.1s, 0 slow turns (>400ms)
+2026/04/19 10:34:56 [match 113] stderr: --- match done (1141ms, 500 turns) ---
+2026/04/19 10:34:56 [match 113] stderr: --- finish phase ---
+2026/04/19 10:34:56 [match 113] stderr: [Alpha] POST /finish OK (0.4ms)
+2026/04/19 10:34:56 [match 113] stderr: [Beta] POST /finish OK (0.3ms)
+2026/04/19 10:34:56 [match 113] stderr: --- finish done (1ms) ---
+2026/04/19 10:34:56 [match 113] stderr: === http-match end (1199ms total) winner=Alpha score=22:0 ===
+2026/04/19 10:34:56 [match 113] DONE in 1.206620583s: winner=Alpha score=22-0 replay=./artifacts/replays/match-860000-1776566095504.json
+2026/04/19 10:46:17 data dir: .
+2026/04/19 10:46:17 ARENA_ADMIN_TOKEN not set, using default token
+2026/04/19 10:46:17 Arena API listening on :9090
+2026/04/19 11:29:19 [match] ping: 222222=5ms(err=ping http://localhost:18082/health failed: Get "http://localhost:18082/health": dial tcp [::1]:18082: connect: connection refused) 111=17ms(err=<nil>)
+2026/04/19 11:29:23 [match] ping: y1=4ms(err=<nil>) y1=0ms(err=<nil>)
+2026/04/19 11:29:29 [match] ping: y1=1ms(err=<nil>) 111=1ms(err=<nil>)
+2026/04/19 11:29:29 [match 114] queued: y1(http://localhost:18080, 1ms) vs 111(http://localhost:18081, 1ms) seed=580000 map=
+2026/04/19 11:29:29 [queue] match 114 enqueued at position 1 (running=0)
+2026/04/19 11:29:29 [queue] match 114 dequeued, starting (running=1, queued=0)
+2026/04/19 11:29:29 [match 114] launching runner: alpha=http://localhost:18080 beta=http://localhost:18081 seed=580000 map=
+2026/04/19 11:29:29 [match 114] runner binary: /Users/jiwn2/dev/masallsome/mascompelete/apps/arena-api/http-match
+2026/04/19 11:29:29 [match 114] working dir: /Users/jiwn2/dev/masallsome/mascompelete
+2026/04/19 11:29:29 [match 114] process started (pid=90366)
+2026/04/19 11:29:29 [match 114] stderr: log file: logs/match-580000-1776569369280.log
+2026/04/19 11:29:29 [match 114] stderr: === http-match start ===
+2026/04/19 11:29:29 [match 114] stderr:   match_id: match-580000-1776569369280
+2026/04/19 11:29:29 [match 114] stderr:   alpha:    http://localhost:18080
+2026/04/19 11:29:29 [match 114] stderr:   beta:     http://localhost:18081
+2026/04/19 11:29:29 [match 114] stderr:   seed:     580000
+2026/04/19 11:29:29 [match 114] stderr:   map:      (random)
+2026/04/19 11:29:29 [match 114] stderr: --- init phase ---
+2026/04/19 11:29:29 [match 114] stderr: [Alpha] POST /init OK (12.9ms)
+2026/04/19 11:29:29 [match 114] stderr: [Beta] POST /init OK (7.4ms)
+2026/04/19 11:29:29 [match 114] stderr: --- init done (21ms) ---
+2026/04/19 11:29:29 [match 114] stderr: --- match phase ---
+2026/04/19 11:29:29 [match 114] stderr:   turn 50/500 alpha=1ms total=4ms elapsed=0.2s slow_turns=0
+2026/04/19 11:29:29 [match 114] stderr:   turn 100/500 alpha=2ms total=3ms elapsed=0.4s slow_turns=0
+2026/04/19 11:29:29 [match 114] stderr:   turn 150/500 alpha=1ms total=1ms elapsed=0.5s slow_turns=0
+2026/04/19 11:29:29 [match 114] stderr:   turn 200/500 alpha=1ms total=3ms elapsed=0.6s slow_turns=0
+2026/04/19 11:29:30 [match 114] stderr:   turn 250/500 alpha=1ms total=2ms elapsed=0.7s slow_turns=0
+2026/04/19 11:29:30 [match 114] stderr:   turn 300/500 alpha=1ms total=1ms elapsed=0.8s slow_turns=0
+2026/04/19 11:29:30 [match 114] stderr:   turn 350/500 alpha=1ms total=2ms elapsed=0.9s slow_turns=0
+2026/04/19 11:29:30 [match 114] stderr:   turn 400/500 alpha=2ms total=3ms elapsed=1.0s slow_turns=0
+2026/04/19 11:29:30 [match 114] stderr:   turn 450/500 alpha=1ms total=2ms elapsed=1.1s slow_turns=0
+2026/04/19 11:29:30 [match 114] stderr:   turn 500/500 alpha=1ms total=3ms elapsed=1.2s slow_turns=0
+2026/04/19 11:29:30 [match 114] stderr: match complete: 500 turns in 1.2s, 0 slow turns (>400ms)
+2026/04/19 11:29:30 [match 114] stderr: --- match done (1160ms, 500 turns) ---
+2026/04/19 11:29:30 [match 114] stderr: --- finish phase ---
+2026/04/19 11:29:30 [match 114] stderr: [Alpha] POST /finish OK (1.3ms)
+2026/04/19 11:29:30 [match 114] stderr: [Beta] POST /finish OK (1.3ms)
+2026/04/19 11:29:30 [match 114] stderr: --- finish done (3ms) ---
+2026/04/19 11:29:30 [match 114] stderr: === http-match end (1243ms total) winner=Alpha score=117:20 ===
+2026/04/19 11:29:30 [match 114] DONE in 1.255562209s: winner=Alpha score=117-20 replay=./artifacts/replays/match-580000-1776569369280.json
+2026/04/19 11:29:30 [queue] match 114 finished (running=0, queued=0)
+2026/04/19 11:29:53 data dir: .
+2026/04/19 11:29:53 ARENA_ADMIN_TOKEN not set, using default token
+2026/04/19 11:29:53 Arena API listening on :9090

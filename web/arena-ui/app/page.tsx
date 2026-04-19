@@ -2,10 +2,11 @@ import { ReplayBoard } from "@/components/replay-board";
 import { loadReplay, listReplays } from "@/lib/replay";
 import { fetchMatches, Match } from "@/lib/api";
 
-type Props = { searchParams: Promise<{ seed?: string; botA?: string; botB?: string; page?: string }> };
+type Props = { searchParams: Promise<{ seed?: string; botA?: string; botB?: string; page?: string; token?: string }> };
 
 export default async function Page({ searchParams }: Props) {
-  const { seed, botA, botB, page } = await searchParams;
+  const { seed, botA, botB, page, token } = await searchParams;
+  const tokenQs = token ? `?token=${encodeURIComponent(token)}` : "";
   const replays = await listReplays();
 
   // no seed specified: show replay picker
@@ -41,7 +42,7 @@ export default async function Page({ searchParams }: Props) {
                 比赛回放
               </h1>
             </div>
-            <a href="/arena" className="control-button" style={{ textDecoration: "none", color: "var(--alpha)", borderColor: "var(--alpha)" }}>
+            <a href={`/arena${tokenQs}`} className="control-button" style={{ textDecoration: "none", color: "var(--alpha)", borderColor: "var(--alpha)" }}>
               排行榜
             </a>
           </div>
@@ -53,9 +54,10 @@ export default async function Page({ searchParams }: Props) {
                 {pagedReplays.map((r) => {
                   const seedNum = r.split("-")[0];
                   const info = matchMap[seedNum];
+                  const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
                   const href = info
-                    ? `/?seed=${seedNum}&botA=${encodeURIComponent(info.botA)}&botB=${encodeURIComponent(info.botB)}`
-                    : `/?seed=${seedNum}`;
+                    ? `/?seed=${seedNum}&botA=${encodeURIComponent(info.botA)}&botB=${encodeURIComponent(info.botB)}${tokenParam}`
+                    : `/?seed=${seedNum}${tokenParam}`;
                   return (
                     <a
                       key={r}
@@ -88,13 +90,13 @@ export default async function Page({ searchParams }: Props) {
               {totalPages > 1 && (
                 <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 16 }}>
                   {currentPage > 0 ? (
-                    <a href={`/?page=${currentPage - 1}`} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", textDecoration: "none" }}>上一页</a>
+                    <a href={`/?page=${currentPage - 1}${token ? `&token=${encodeURIComponent(token)}` : ""}`} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", textDecoration: "none" }}>上一页</a>
                   ) : (
                     <span style={{ border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--muted)", fontSize: "0.8rem", padding: "4px 14px", opacity: 0.4 }}>上一页</span>
                   )}
                   <span style={{ color: "var(--muted)", fontSize: "0.8rem", lineHeight: "28px" }}>{currentPage + 1} / {totalPages}</span>
                   {(currentPage + 1) < totalPages ? (
-                    <a href={`/?page=${currentPage + 1}`} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", textDecoration: "none" }}>下一页</a>
+                    <a href={`/?page=${currentPage + 1}${token ? `&token=${encodeURIComponent(token)}` : ""}`} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.8rem", padding: "4px 14px", textDecoration: "none" }}>下一页</a>
                   ) : (
                     <span style={{ border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--muted)", fontSize: "0.8rem", padding: "4px 14px", opacity: 0.4 }}>下一页</span>
                   )}
@@ -114,7 +116,7 @@ export default async function Page({ searchParams }: Props) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", flexDirection: "column", gap: 16 }}>
         <p style={{ color: "var(--muted)", fontSize: "1.1rem" }}>回放文件不存在（seed={seed}）</p>
-        <a href="/" style={{ color: "var(--alpha)", fontSize: "0.9rem" }}>← 返回回放列表</a>
+        <a href={`/${tokenQs}`} style={{ color: "var(--alpha)", fontSize: "0.9rem" }}>← 返回回放列表</a>
       </div>
     );
   }

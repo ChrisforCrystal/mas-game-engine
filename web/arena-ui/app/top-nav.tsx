@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 const baseStyle = {
   padding: "6px 14px",
@@ -34,9 +34,16 @@ function navStyle(active: boolean) {
 
 export function TopNav() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const replayActive = pathname === "/";
   const arenaActive = pathname.startsWith("/arena");
   const mapsActive = pathname.startsWith("/maps");
+  const rulesActive = pathname.startsWith("/rules");
+  const botsActive = pathname.startsWith("/bots");
+
+  // preserve query params (e.g. ?token=xxx) across navigation
+  const qs = searchParams.toString();
+  const suffix = qs ? `?${qs}` : "";
 
   return (
     <nav
@@ -54,14 +61,20 @@ export function TopNav() {
         borderBottom: "1px solid rgba(118,155,196,0.14)",
       }}
     >
-      <Link href="/arena" style={navStyle(arenaActive)}>
+      <Link href={`/arena${suffix}`} style={navStyle(arenaActive)}>
         排行榜
       </Link>
-      <Link href="/maps" style={navStyle(mapsActive)}>
+      <Link href={`/maps${suffix}`} style={navStyle(mapsActive)}>
         地图
       </Link>
-      <Link href="/" style={navStyle(replayActive)}>
+      <Link href={`/${suffix}`} style={navStyle(replayActive)}>
         回放
+      </Link>
+      <Link href={`/bots${suffix}`} style={navStyle(botsActive)}>
+        数据面板
+      </Link>
+      <Link href={`/rules${suffix}`} style={rulesActive ? navStyle(true) : { ...navStyle(false), color: "var(--gold)", opacity: 1, border: "1px solid rgba(255,215,0,0.3)", background: "rgba(255,215,0,0.06)" }}>
+        游戏说明
       </Link>
     </nav>
   );

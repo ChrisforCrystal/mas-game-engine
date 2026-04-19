@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Big_Shoulders_Display, Plus_Jakarta_Sans } from "next/font/google";
 
 import "./globals.css";
@@ -29,7 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${display.variable} ${body.variable}`}>
-        <TopNav />
+        <Suspense><TopNav /></Suspense>
         <div style={{ paddingTop: 56 }}>{children}</div>
       </body>
     </html>

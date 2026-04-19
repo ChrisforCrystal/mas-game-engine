@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Bot,
   Match,
   MapInfo,
   Ranking,
+  BotHealth,
   fetchBots,
   fetchMatches,
   fetchRankings,
   fetchMaps,
+  fetchBotHealth,
   registerBot,
   startMatch,
   deleteBot,
@@ -29,10 +32,21 @@ export default function ArenaPage() {
   const RANK_PAGE_SIZE = 15;
   const [rankOwnerFilter, setRankOwnerFilter] = useState("");
   const [adminToken, setAdminToken] = useState<string | null>(null);
+  const [health, setHealth] = useState<Record<string, BotHealth>>({});
+  const searchParams = useSearchParams();
+  const qs = searchParams.toString();
+  const qsSuffix = qs ? `?${qs}` : "";
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setAdminToken(params.get("token"));
+    setAdminToken(searchParams.get("token"));
+  }, [searchParams]);
+
+  // poll bot health every 15s
+  useEffect(() => {
+    const poll = () => fetchBotHealth().then(setHealth).catch(() => {});
+    poll();
+    const t = setInterval(poll, 15000);
+    return () => clearInterval(t);
   }, []);
 
   // register bot form
@@ -120,7 +134,8 @@ export default function ArenaPage() {
       setLiveProgress(null);
       setLiveDone(false);
       const res = await startMatch(a.id, b.id, matchSeed ? parseInt(matchSeed) : undefined, matchMap ? parseInt(matchMap) : undefined);
-      setMatchMsg(`比赛已发起 #${res.id}，seed=${res.seed}`);
+      const queueInfo = res.queue_waiting > 0 ? `（排队中，前方 ${res.queue_position - 1} 场）` : "";
+      setMatchMsg(`比赛已发起 #${res.id}，seed=${res.seed}${queueInfo}`);
       setLiveMatchId(res.id);
       reload();
     } catch (err: any) {
@@ -153,7 +168,7 @@ export default function ArenaPage() {
               </button>
             ))}
             <a
-              href="/"
+              href={`/${qsSuffix}`}
               className="control-button"
               style={{ textDecoration: "none", color: "var(--muted)", opacity: 0.6 }}
             >
@@ -244,10 +259,11 @@ export default function ArenaPage() {
               <tbody>
                 {paged.map((r, i) => {
                   const rank = rankPage * RANK_PAGE_SIZE + i;
+                  const rh = health[String(r.bot_id)];
                   return (
                   <tr key={r.bot_id} style={{ borderBottom: "1px solid var(--line)" }}>
                     <td style={{ padding: "6px 10px", color: rank === 0 ? "var(--gold)" : "var(--muted)" }}>{rank + 1}</td>
-                    <td style={{ padding: "6px 10px", fontWeight: 600 }}>{r.bot_name}</td>
+                    <td style={{ padding: "6px 10px", fontWeight: 600 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><HealthDot health={rh} />{r.bot_name}{rh && <span style={{ fontSize: "0.64rem", color: rh.online ? "var(--alpha)" : "var(--muted)", fontWeight: 400 }}>{rh.online ? `${rh.latency_ms}ms` : "离线"}</span>}</span></td>
                     <td style={{ padding: "6px 10px", color: "var(--muted)" }}>{r.owner}</td>
                     <td style={{ padding: "6px 10px", color: "var(--gold)", fontWeight: 700 }}>{(r.rating ?? 0).toFixed(1)}</td>
                     <td style={{ padding: "6px 10px", color: "var(--alpha)" }}>{r.wins}</td>
@@ -340,14 +356,22 @@ export default function ArenaPage() {
                 <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>Alpha Bot</span>
                 <select value={matchA} onChange={(e) => setMatchA(e.target.value)} style={selectStyle}>
                   <option value="">选择 bot</option>
-                  {bots.map((b) => <option key={b.id} value={b.name}>{b.name} ({b.owner})</option>)}
+                  {bots.map((b) => {
+                    const h = health[String(b.id)];
+                    const dot = h ? (h.online ? "🟢" : "🔴") : "⚪";
+                    return <option key={b.id} value={b.name}>{dot} {b.name} ({b.owner}){h?.online ? ` ${h.latency_ms}ms` : ""}</option>;
+                  })}
                 </select>
               </label>
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>Beta Bot</span>
                 <select value={matchB} onChange={(e) => setMatchB(e.target.value)} style={selectStyle}>
                   <option value="">选择 bot</option>
-                  {bots.map((b) => <option key={b.id} value={b.name}>{b.name} ({b.owner})</option>)}
+                  {bots.map((b) => {
+                    const h = health[String(b.id)];
+                    const dot = h ? (h.online ? "🟢" : "🔴") : "⚪";
+                    return <option key={b.id} value={b.name}>{dot} {b.name} ({b.owner}){h?.online ? ` ${h.latency_ms}ms` : ""}</option>;
+                  })}
                 </select>
               </label>
               <label style={{ display: "grid", gap: 6 }}>
@@ -489,13 +513,19 @@ export default function ArenaPage() {
             <div style={{ marginTop: 32 }}>
               <p className="eyebrow" style={{ marginBottom: 12 }}>已注册 Bot</p>
               <div style={{ display: "grid", gap: 10 }}>
-                {bots.map((b) => (
+                {bots.map((b) => {
+                  const h = health[String(b.id)];
+                  return (
                   <div key={b.id} className="event-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <strong>{b.name}</strong>
-                      <span style={{ display: "block", color: "var(--muted)", fontSize: "0.8rem", marginTop: 2 }}>{b.owner} · {b.url}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <HealthDot health={h} />
+                      <div>
+                        <strong>{b.name}</strong>
+                        <span style={{ display: "block", color: "var(--muted)", fontSize: "0.8rem", marginTop: 2 }}>{b.owner} · {b.url}</span>
+                      </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      {h && <span style={{ fontSize: "0.7rem", color: h.online ? "var(--alpha)" : "var(--muted)" }}>{h.online ? `${h.latency_ms}ms` : "离线"}</span>}
                       <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>#{b.id}</span>
                       {adminToken && (
                         <button
@@ -510,7 +540,8 @@ export default function ArenaPage() {
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
                 {bots.length === 0 && <p style={{ color: "var(--muted)" }}>暂无 bot</p>}
               </div>
             </div>
@@ -562,7 +593,7 @@ function MatchRow({ match: m, onDelete, isAdmin }: { match: Match; onDelete: (id
     return () => es.close();
   }, [m.status, m.id]);
 
-  const statusColor = { done: "var(--alpha)", running: "var(--gold)", error: "var(--danger)", pending: "var(--muted)" }[m.status] ?? "var(--muted)";
+  const statusColor = { done: "var(--alpha)", running: "var(--gold)", error: "var(--danger)", pending: "var(--muted)", queued: "#b088ff" }[m.status] ?? "var(--muted)";
   const winnerLabel = m.winner === "Alpha" ? m.bot_a_name : m.winner === "Beta" ? m.bot_b_name : m.status === "done" ? "平局" : "";
   const mapLabel = m.map_path ? m.map_path.replace(/^maps\//, "").replace(/\.json$/, "") : null;
   const latColor = (ms: number | null | undefined) => !ms ? "var(--muted)" : ms < 50 ? "var(--alpha)" : ms < 150 ? "var(--gold)" : "var(--danger)";
@@ -632,3 +663,22 @@ const selectStyle: React.CSSProperties = {
   ...inputStyle,
   cursor: "pointer",
 };
+
+function HealthDot({ health: h }: { health?: BotHealth }) {
+  const online = h?.online ?? false;
+  const color = !h ? "rgba(255,255,255,0.2)" : online ? "#4ade80" : "#f87171";
+  return (
+    <span
+      title={h ? (online ? `在线 ${h.latency_ms}ms` : "离线") : "检测中..."}
+      style={{
+        display: "inline-block",
+        width: 8,
+        height: 8,
+        borderRadius: "50%",
+        background: color,
+        boxShadow: online ? `0 0 6px ${color}` : "none",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
