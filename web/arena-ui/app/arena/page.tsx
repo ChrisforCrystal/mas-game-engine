@@ -199,6 +199,16 @@ export default function ArenaPage() {
         {/* rank tab */}
         {tab === "rank" && (
           <div>
+            {/* rating rules */}
+            <div style={{ marginBottom: 16, padding: "12px 16px", borderRadius: 14, border: "1px solid rgba(118,155,196,0.12)", background: "rgba(7,18,32,0.6)", fontSize: "0.76rem", color: "var(--muted)", lineHeight: 1.7 }}>
+              <span style={{ color: "var(--text)", fontWeight: 600 }}>评分规则</span>
+              <span style={{ margin: "0 8px", opacity: 0.4 }}>|</span>
+              综合评分 = Wilson 胜率置信度 × 70 + 归一化均分 × 30
+              <span style={{ margin: "0 8px", opacity: 0.4 }}>|</span>
+              Wilson Score 采用 95% 置信区间下界，场次越少惩罚越大，避免 1 胜 0 负排第一
+              <span style={{ margin: "0 8px", opacity: 0.4 }}>|</span>
+              均分按全场最高分归一化到 0-1
+            </div>
             {/* owner filter */}
             {(() => {
               const owners = [...new Set(rankings.map(r => r.owner))].sort();

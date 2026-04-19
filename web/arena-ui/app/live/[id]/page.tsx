@@ -19,30 +19,54 @@ export default function LivePage() {
   const [connected, setConnected] = useState(false);
   const [mapSize, setMapSize] = useState<{ w: number; h: number } | null>(null);
 
-  // SSE connection — connect directly to Go API to avoid Next.js proxy buffering
+  // SSE connection — use fetch + ReadableStream to avoid Next.js proxy buffering EventSource
   useEffect(() => {
     if (!id) return;
-    // determine Go API base: same host, port 9090
-    const apiBase = `${window.location.protocol}//${window.location.hostname}:9090`;
-    const es = new EventSource(`${apiBase}/matches/${id}/live-frames`);
-    es.onopen = () => setConnected(true);
-    es.onmessage = (e) => {
+    let cancelled = false;
+
+    async function connect() {
       try {
-        const data = JSON.parse(e.data);
-        if (data.type === "init") {
-          setMeta({ bot_a: data.bot_a, bot_b: data.bot_b, seed: data.seed, width: data.width, height: data.height });
-          setMapSize({ w: data.width || 36, h: data.height || 36 });
-        } else if (data.type === "frame") {
-          const f = data.frame as ReplayFrame;
-          setFrame(f);
-        } else if (data.type === "done") {
-          setDone(true);
-          es.close();
+        const res = await fetch(`/api/matches/${id}/live-frames`, {
+          headers: { Accept: "text/event-stream" },
+        });
+        if (!res.ok || !res.body) { setConnected(false); return; }
+        setConnected(true);
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (!cancelled) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          // parse SSE lines: "data: {...}\n\n"
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+          for (const part of parts) {
+            const line = part.replace(/^data: /, "").trim();
+            if (!line) continue;
+            try {
+              const data = JSON.parse(line);
+              if (data.type === "init") {
+                setMeta({ bot_a: data.bot_a, bot_b: data.bot_b, seed: data.seed, width: data.width, height: data.height });
+                setMapSize({ w: data.width || 36, h: data.height || 36 });
+              } else if (data.type === "frame") {
+                setFrame(data.frame as ReplayFrame);
+              } else if (data.type === "done") {
+                setDone(true);
+              }
+            } catch {}
+          }
         }
-      } catch {}
-    };
-    es.onerror = () => { setConnected(false); };
-    return () => es.close();
+      } catch {
+        setConnected(false);
+      }
+    }
+
+    connect();
+    return () => { cancelled = true; };
   }, [id]);
 
   // canvas rendering
