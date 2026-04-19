@@ -60,9 +60,9 @@ export default function MapsPage() {
       let cabs: Record<string, number> = {};
       try { cabs = JSON.parse(editCabinets || "{}"); } catch { /* ignore */ }
       const preview: MapDetail = { name: editName, description: editDesc, layout: lines, cabinets: cabs };
-      renderMap(previewCanvasRef.current, preview);
+      renderMap(previewCanvasRef.current, preview, { fitToContainer: true });
     } catch { /* ignore parse errors during typing */ }
-  }, [editLayout, editCabinets, editing, creating]);
+  }, [editName, editDesc, editLayout, editCabinets, editing, creating]);
 
   function startEdit() {
     if (!detail || !selectedId) return;
@@ -130,6 +130,10 @@ export default function MapsPage() {
   const mapH = rows.length;
   const cabinetEntries = detail ? Object.entries(detail.cabinets) : [];
   const isEditorOpen = editing || creating;
+  const editLines = editLayout.split("\n").filter(l => l.length > 0);
+  const editWidth = editLines[0]?.length ?? 0;
+  const editHeight = editLines.length;
+  const hasUnevenRows = editLines.some(line => line.length !== editWidth);
 
   return (
     <div className="shell">
@@ -169,8 +173,8 @@ export default function MapsPage() {
 
         {/* editor */}
         {isEditorOpen && (
-          <div style={{ marginTop: 24, display: "grid", gap: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div style={{ marginTop: 24, display: "grid", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 14 }}>
               <label style={{ display: "grid", gap: 4 }}>
                 <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>地图名称</span>
                 <input value={editName} onChange={e => setEditName(e.target.value)} style={inputStyle} placeholder="我的地图" />
@@ -180,29 +184,66 @@ export default function MapsPage() {
                 <input value={editDesc} onChange={e => setEditDesc(e.target.value)} style={inputStyle} placeholder="地图描述" />
               </label>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-              <label style={{ display: "grid", gap: 4 }}>
-                <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
-                  布局（ASCII，# 墙 . 空地 A/B 出生点 0-9 机柜 ^v&lt;&gt; 传送带）
-                </span>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))", gap: 18, alignItems: "start" }}>
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={editorHelpStyle}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ color: "var(--text)", fontSize: "0.86rem", fontWeight: 700 }}>布局字符说明</span>
+                    <span style={{ color: hasUnevenRows ? "var(--danger)" : "var(--muted)", fontSize: "0.76rem" }}>
+                      {editLines.length > 0 ? `${editWidth} 列 x ${editHeight} 行${hasUnevenRows ? " · 行宽不一致" : ""}` : "输入布局后显示尺寸"}
+                    </span>
+                  </div>
+                  <p style={helperTextStyle}>
+                    每一行是一排地图格子，每个字符代表一个格子。建议所有行长度一致；机柜字符需要在下方 JSON 中配置容量。
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(136px, 1fr))", gap: 8 }}>
+                    {layoutLegendItems.map(item => (
+                      <div key={item.label} style={legendItemStyle}>
+                        <code style={legendCodeStyle}>{item.code}</code>
+                        <span>{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>地图布局</span>
                 <textarea
                   value={editLayout}
                   onChange={e => setEditLayout(e.target.value)}
-                  style={{ ...inputStyle, fontFamily: "monospace", fontSize: "0.72rem", minHeight: 300, resize: "vertical", lineHeight: 1.2 }}
+                    spellCheck={false}
+                    style={{ ...inputStyle, fontFamily: "monospace", fontSize: "0.74rem", minHeight: 390, resize: "vertical", lineHeight: 1.24, whiteSpace: "pre", overflow: "auto" }}
                   placeholder={"##########\n#AAAA...#\n#........#\n#...0....#\n#........#\n#...BBBB.#\n##########"}
                 />
               </label>
-              <div>
-                <span style={{ color: "var(--muted)", fontSize: "0.8rem", display: "block", marginBottom: 4 }}>实时预览</span>
-                <div style={{ overflow: "auto", borderRadius: 8, border: "1px solid var(--line)", padding: 4, background: "#071320", maxHeight: 340 }}>
-                  <canvas ref={previewCanvasRef} />
+            <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>机柜容量 JSON</span>
+              <input value={editCabinets} onChange={e => setEditCabinets(e.target.value)} style={{ ...inputStyle, fontFamily: "monospace" }} placeholder='{"0": 3000}' />
+                  <span style={helperTextStyle}>示例：布局里有 0 和 1，就填写 {`{"0": 3000, "1": 3000}`}。</span>
+            </label>
+              </div>
+              <div style={previewPanelStyle}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                  <span style={{ color: "var(--text)", fontSize: "0.86rem", fontWeight: 700 }}>实时预览</span>
+                  <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>完整地图自适应显示</span>
+                </div>
+                <div style={previewFrameStyle}>
+                  {editLines.length > 0 ? (
+                    <canvas ref={previewCanvasRef} />
+                  ) : (
+                    <div style={{ color: "var(--muted)", fontSize: "0.82rem" }}>输入地图布局后显示预览</div>
+                  )}
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>常见规则</span>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {["A/B 是出生区", "0-9 是机柜", "^ v < > 是传送带方向", "# 不可通行"].map(rule => (
+                      <span key={rule} style={ruleChipStyle}>{rule}</span>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>机柜容量（JSON，如 {`{"0": 3000, "1": 3000}`}）</span>
-              <input value={editCabinets} onChange={e => setEditCabinets(e.target.value)} style={{ ...inputStyle, fontFamily: "monospace" }} placeholder='{"0": 3000}' />
-            </label>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <button onClick={handleSave} className="control-button" style={{ background: "rgba(25,225,255,0.1)", borderColor: "var(--alpha)", color: "var(--alpha)" }}>
                 {creating ? "创建" : "保存"}
@@ -275,7 +316,7 @@ export default function MapsPage() {
   );
 }
 
-function renderMap(canvas: HTMLCanvasElement, detail: MapDetail) {
+function renderMap(canvas: HTMLCanvasElement, detail: MapDetail, options?: { fitToContainer?: boolean }) {
   const { tiles, width, height } = layoutToTiles(detail);
   const spawns = getSpawns(detail);
   const ctx = canvas.getContext("2d");
@@ -283,8 +324,17 @@ function renderMap(canvas: HTMLCanvasElement, detail: MapDetail) {
 
   canvas.width = width * TILE_SIZE * CANVAS_SCALE;
   canvas.height = height * TILE_SIZE * CANVAS_SCALE;
-  canvas.style.width = `${width * TILE_SIZE}px`;
-  canvas.style.height = `${height * TILE_SIZE}px`;
+  if (options?.fitToContainer) {
+    canvas.style.width = "100%";
+    canvas.style.height = "auto";
+    canvas.style.maxWidth = `${width * TILE_SIZE}px`;
+    canvas.style.display = "block";
+  } else {
+    canvas.style.width = `${width * TILE_SIZE}px`;
+    canvas.style.height = `${height * TILE_SIZE}px`;
+    canvas.style.maxWidth = "";
+    canvas.style.display = "";
+  }
   ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
 
   ctx.fillStyle = "#071320";
@@ -303,4 +353,82 @@ const inputStyle: React.CSSProperties = {
   padding: "10px 14px",
   outline: "none",
   fontSize: "0.92rem",
+};
+
+const layoutLegendItems = [
+  { code: "#", label: "墙：不可通行" },
+  { code: ".", label: "空地：可通行" },
+  { code: "A", label: "Alpha 出生点" },
+  { code: "B", label: "Beta 出生点" },
+  { code: "0-9", label: "机柜：需配置容量" },
+  { code: "^ v < >", label: "传送带方向" },
+];
+
+const editorHelpStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 10,
+  padding: 14,
+  border: "1px solid var(--line)",
+  borderRadius: 10,
+  background: "rgba(255,255,255,0.035)",
+};
+
+const helperTextStyle: React.CSSProperties = {
+  margin: 0,
+  color: "var(--muted)",
+  fontSize: "0.76rem",
+  lineHeight: 1.55,
+};
+
+const legendItemStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  minHeight: 34,
+  padding: "6px 8px",
+  border: "1px solid rgba(255,255,255,0.07)",
+  borderRadius: 8,
+  background: "rgba(7,18,31,0.56)",
+  color: "var(--muted)",
+  fontSize: "0.76rem",
+};
+
+const legendCodeStyle: React.CSSProperties = {
+  minWidth: 46,
+  padding: "2px 6px",
+  borderRadius: 6,
+  background: "rgba(25,225,255,0.1)",
+  color: "var(--alpha)",
+  textAlign: "center",
+  fontFamily: "monospace",
+  fontSize: "0.76rem",
+};
+
+const previewPanelStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 12,
+  padding: 14,
+  border: "1px solid var(--line)",
+  borderRadius: 10,
+  background: "rgba(7,18,31,0.58)",
+};
+
+const previewFrameStyle: React.CSSProperties = {
+  display: "grid",
+  placeItems: "center",
+  minHeight: 360,
+  overflow: "hidden",
+  borderRadius: 8,
+  border: "1px solid var(--line)",
+  padding: 8,
+  background: "#071320",
+};
+
+const ruleChipStyle: React.CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.08)",
+  borderRadius: 999,
+  padding: "4px 9px",
+  background: "rgba(255,255,255,0.04)",
+  color: "var(--muted)",
+  fontSize: "0.72rem",
 };
