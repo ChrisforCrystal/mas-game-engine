@@ -35,10 +35,14 @@ type matchProgress struct {
 }
 
 type matchLive struct {
-	mu          sync.Mutex
-	latest      matchProgress
-	subscribers []chan matchProgress
-	done        bool
+	mu              sync.Mutex
+	latest          matchProgress
+	subscribers     []chan matchProgress
+	frameSubscribers []chan string
+	mapWidth        int
+	mapHeight       int
+	lastFrame       string // cached last frame JSON for late joiners
+	done            bool
 }
 
 var liveMatches sync.Map // map[int64]*matchLive
@@ -215,6 +219,18 @@ func (ml *matchLive) publish(p matchProgress) {
 	}
 }
 
+func (ml *matchLive) publishFrame(frameJSON string) {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	ml.lastFrame = frameJSON
+	for _, ch := range ml.frameSubscribers {
+		select {
+		case ch <- frameJSON:
+		default:
+		}
+	}
+}
+
 func (ml *matchLive) finish() {
 	ml.mu.Lock()
 	defer ml.mu.Unlock()
@@ -223,6 +239,10 @@ func (ml *matchLive) finish() {
 		close(ch)
 	}
 	ml.subscribers = nil
+	for _, ch := range ml.frameSubscribers {
+		close(ch)
+	}
+	ml.frameSubscribers = nil
 }
 
 func (ml *matchLive) subscribe() (chan matchProgress, func()) {
@@ -233,7 +253,6 @@ func (ml *matchLive) subscribe() (chan matchProgress, func()) {
 		close(ch)
 		return ch, func() {}
 	}
-	// send current state immediately
 	if ml.latest.Total > 0 {
 		ch <- ml.latest
 	}
@@ -244,6 +263,35 @@ func (ml *matchLive) subscribe() (chan matchProgress, func()) {
 		for i, c := range ml.subscribers {
 			if c == ch {
 				ml.subscribers = append(ml.subscribers[:i], ml.subscribers[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
+func (ml *matchLive) subscribeFrames() (chan string, func()) {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	ch := make(chan string, 64)
+	if ml.done {
+		// match already finished — send last frame if available, then close
+		if ml.lastFrame != "" {
+			ch <- ml.lastFrame
+		}
+		close(ch)
+		return ch, func() {}
+	}
+	// send cached last frame so late joiners see current state immediately
+	if ml.lastFrame != "" {
+		ch <- ml.lastFrame
+	}
+	ml.frameSubscribers = append(ml.frameSubscribers, ch)
+	return ch, func() {
+		ml.mu.Lock()
+		defer ml.mu.Unlock()
+		for i, c := range ml.frameSubscribers {
+			if c == ch {
+				ml.frameSubscribers = append(ml.frameSubscribers[:i], ml.frameSubscribers[i+1:]...)
 				break
 			}
 		}
@@ -308,6 +356,7 @@ func main() {
 	mux.HandleFunc("GET /replays", handleListReplays)
 	mux.HandleFunc("GET /replays/{name}", handleGetReplay)
 	mux.HandleFunc("GET /matches/{id}/live", handleMatchLive)
+	mux.HandleFunc("GET /matches/{id}/live-frames", handleMatchLiveFrames)
 	mux.HandleFunc("GET /queue", handleQueueStatus)
 	mux.HandleFunc("GET /bots/{id}/stats", handleBotStats)
 	mux.HandleFunc("GET /bots/health", handleBotHealth)
@@ -812,14 +861,27 @@ func runMatch(matchID int64, botAURL, botBURL string, seed int64, mapPath string
 
 	var allOutput strings.Builder
 	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 512*1024), 512*1024) // 512KB buffer for FRAME lines
 	for scanner.Scan() {
 		line := scanner.Text()
 		allOutput.WriteString(line)
 		allOutput.WriteByte('\n')
 
 		var turn, total, sa, sb int
+		var mw, mh int
 		if n, _ := fmt.Sscanf(line, "PROGRESS %d/%d %d:%d", &turn, &total, &sa, &sb); n == 4 {
 			live.publish(matchProgress{Turn: turn, Total: total, ScoreA: sa, ScoreB: sb})
+		} else if strings.HasPrefix(line, "FRAME ") {
+			live.publishFrame(line[6:])
+			if turn <= 3 {
+				log.Printf("[match %d] FRAME turn=%d len=%d subs=%d", matchID, turn, len(line)-6, len(live.frameSubscribers))
+			}
+		} else if n, _ := fmt.Sscanf(line, "MAP %dx%d", &mw, &mh); n == 2 {
+			live.mu.Lock()
+			live.mapWidth = mw
+			live.mapHeight = mh
+			live.mu.Unlock()
+			log.Printf("[match %d] map size: %dx%d", matchID, mw, mh)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -1541,6 +1603,62 @@ func handleMatchLive(w http.ResponseWriter, r *http.Request) {
 			}
 			data, _ := json.Marshal(p)
 			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
+}
+
+// ── GET /matches/{id}/live-frames (SSE frame stream for live spectating) ────
+
+func handleMatchLiveFrames(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, 400, "invalid id")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, 500, "streaming not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	live := getLive(id)
+	ch, unsub := live.subscribeFrames()
+	defer unsub()
+
+	// send initial metadata — use map size if already known, default to 36x36
+	var botAName, botBName string
+	var seed int64
+	db.QueryRow(`SELECT ba.name, bb.name, m.seed FROM matches m JOIN bots ba ON ba.id=m.bot_a_id JOIN bots bb ON bb.id=m.bot_b_id WHERE m.id=?`, id).Scan(&botAName, &botBName, &seed)
+	live.mu.Lock()
+	mw, mh := live.mapWidth, live.mapHeight
+	live.mu.Unlock()
+	if mw == 0 { mw = 36 }
+	if mh == 0 { mh = 36 }
+	meta := map[string]any{"type": "init", "match_id": id, "bot_a": botAName, "bot_b": botBName, "seed": seed, "width": mw, "height": mh}
+	metaJSON, _ := json.Marshal(meta)
+	fmt.Fprintf(w, "data: %s\n\n", metaJSON)
+	flusher.Flush()
+
+	// immediately start consuming frames — no blocking wait
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case frameJSON, ok := <-ch:
+			if !ok {
+				fmt.Fprintf(w, "data: {\"type\":\"done\"}\n\n")
+				flusher.Flush()
+				return
+			}
+			fmt.Fprintf(w, "data: {\"type\":\"frame\",\"frame\":%s}\n\n", frameJSON)
 			flusher.Flush()
 		}
 	}

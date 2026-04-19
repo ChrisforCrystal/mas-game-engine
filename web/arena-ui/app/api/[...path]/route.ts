@@ -59,7 +59,7 @@ async function proxy(request: NextRequest, context: RouteContext) {
   if (accept) headers.set("accept", accept);
 
   // SSE endpoints (e.g. /matches/123/live) need long timeout and streaming headers
-  const isSSE = path.length >= 3 && path[path.length - 1] === "live";
+  const isSSE = path.length >= 3 && (path[path.length - 1] === "live" || path[path.length - 1] === "live-frames");
   // POST /matches needs longer timeout because of pre-match bot ping (up to 2s × 2 bots)
   const isWrite = request.method === "POST" || request.method === "PUT" || request.method === "DELETE";
   const timeout = isSSE ? 600000 : isWrite ? 10000 : 5000;

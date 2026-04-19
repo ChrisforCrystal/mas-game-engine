@@ -447,7 +447,7 @@ function summarizeCabinets(tiles: Tile[]): CabinetStatus[] {
 }
 
 
-function drawTiles(
+export function drawTiles(
   context: CanvasRenderingContext2D,
   tiles: Tile[],
   width: number,
@@ -657,7 +657,7 @@ function drawArrow(
   context.restore();
 }
 
-function drawGrid(context: CanvasRenderingContext2D, width: number, height: number) {
+export function drawGrid(context: CanvasRenderingContext2D, width: number, height: number) {
   context.strokeStyle = "rgba(255,255,255,0.05)";
   context.lineWidth = 1;
   for (let x = 0; x <= width; x += 1) {
@@ -674,7 +674,7 @@ function drawGrid(context: CanvasRenderingContext2D, width: number, height: numb
   }
 }
 
-function drawRobots(context: CanvasRenderingContext2D, robots: RobotState[]) {
+export function drawRobots(context: CanvasRenderingContext2D, robots: RobotState[]) {
   for (const robot of robots) {
     const px = robot.position.x * TILE_SIZE;
     const py = robot.position.y * TILE_SIZE;
@@ -720,7 +720,7 @@ function drawRobots(context: CanvasRenderingContext2D, robots: RobotState[]) {
 }
 
 /** Draw overlays for real events: "拾取了 X 点能量" and "向机架 X 投递了 Y 点能量" */
-function drawEventOverlays(
+export function drawEventOverlays(
   context: CanvasRenderingContext2D,
   robots: RobotState[],
   events: ReplayEvent[],

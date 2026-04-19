@@ -212,6 +212,9 @@ fn main() {
     log(&format!("--- init done ({:.0}ms) ---", t.elapsed().as_secs_f64() * 1000.0));
 
     println!("Starting match  seed={seed}  alpha={bot_a_url}  beta={bot_b_url}");
+    // output map metadata for live spectating
+    println!("MAP {}x{}", init_state.map.width, init_state.map.height);
+    let _ = io::stdout().flush();
     log("--- match phase ---");
     let t = Instant::now();
     let (_, replay, summary, slow_turns) = match &layout_json {
@@ -301,7 +304,18 @@ fn run_match_with_progress(
         }
         // output progress every turn so SSE can stream in real time
         println!("PROGRESS {}/{} {}:{}", state.turn, max_turns, state.scores[0], state.scores[1]);
+        // output frame JSON for live spectating
+        if let Some(frame) = replay.frames.last() {
+            if let Ok(json) = serde_json::to_string(frame) {
+                println!("FRAME {}", json);
+            }
+        }
         let _ = io::stdout().flush();
+        // configurable delay for live spectating (env MATCH_TURN_DELAY_MS, default 0)
+        let delay_ms: u64 = env::var("MATCH_TURN_DELAY_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        if delay_ms > 0 {
+            std::thread::sleep(Duration::from_millis(delay_ms));
+        }
     }
     log(&format!("match complete: {} turns in {:.1}s, {} slow turns (>400ms)",
         max_turns, match_start.elapsed().as_secs_f64(), slow_turns));
@@ -341,9 +355,17 @@ fn run_match_with_layout(
                 match_start.elapsed().as_secs_f64(), slow_turns));
         }
         println!("PROGRESS {}/{} {}:{}", state.turn, max_turns, state.scores[0], state.scores[1]);
+        if let Some(frame) = replay.frames.last() {
+            if let Ok(json) = serde_json::to_string(frame) {
+                println!("FRAME {}", json);
+            }
+        }
         let _ = io::stdout().flush();
-        // small delay so the live progress bar is visible
-        std::thread::sleep(Duration::from_millis(20));
+        // configurable delay for live spectating (env MATCH_TURN_DELAY_MS, default 0)
+        let delay_ms: u64 = env::var("MATCH_TURN_DELAY_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        if delay_ms > 0 {
+            std::thread::sleep(Duration::from_millis(delay_ms));
+        }
     }
     log(&format!("match complete: {} turns in {:.1}s, {} slow turns (>400ms)",
         max_turns, match_start.elapsed().as_secs_f64(), slow_turns));

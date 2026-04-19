@@ -154,9 +154,8 @@ export default function ArenaPage() {
       setLiveProgress(null);
       setLiveDone(false);
       const res = await startMatch(a.id, b.id, matchSeed ? parseInt(matchSeed) : undefined, matchMap ? parseInt(matchMap) : undefined);
-      const queueInfo = res.queue_waiting > 0 ? `（排队中，前方 ${res.queue_position - 1} 场）` : "";
-      setMatchMsg(`比赛已发起 #${res.id}，seed=${res.seed}${queueInfo}`);
-      setLiveMatchId(res.id);
+      // auto-navigate to live spectating page
+      window.location.href = `/live/${res.id}`;
       reload();
     } catch (err: any) {
       setMatchMsg("失败: " + err.message);
@@ -689,6 +688,14 @@ function MatchRow({ match: m, onDelete, isAdmin }: { match: Match; onDelete: (id
           <span style={{ fontSize: "0.64rem", color: "var(--danger, #ff4d6a)", border: "1px solid rgba(255,77,106,0.3)", borderRadius: 6, padding: "1px 6px" }} title={`${m.slow_turns} 个回合超过 400ms`}>
             慢{m.slow_turns}
           </span>
+        )}
+        {m.status === "running" && (
+          <a
+            href={`/live/${m.id}`}
+            style={{ fontSize: "0.76rem", color: "var(--gold)", textDecoration: "none", border: "1px solid var(--gold)", borderRadius: 999, padding: "2px 10px" }}
+          >
+            观战
+          </a>
         )}
         {m.status === "done" && (
           <a
