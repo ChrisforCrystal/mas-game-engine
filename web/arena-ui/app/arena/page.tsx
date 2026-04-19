@@ -15,6 +15,7 @@ import {
   fetchBotHealth,
   registerBot,
   startMatch,
+  updateBot,
   deleteBot,
   deleteMatch,
   clearMatches,
@@ -54,6 +55,13 @@ export default function ArenaPage() {
   const [regUrl, setRegUrl] = useState("");
   const [regOwner, setRegOwner] = useState("");
   const [regMsg, setRegMsg] = useState("");
+
+  // edit bot
+  const [editingBotId, setEditingBotId] = useState<number | null>(null);
+  const [editBotName, setEditBotName] = useState("");
+  const [editBotUrl, setEditBotUrl] = useState("");
+  const [editBotOwner, setEditBotOwner] = useState("");
+  const [editBotMsg, setEditBotMsg] = useState("");
 
   // start match form
   const [matchA, setMatchA] = useState("");
@@ -103,6 +111,13 @@ export default function ArenaPage() {
     try { await clearMatches(adminToken || undefined); reload(); } catch (err: any) { alert("清空失败: " + err.message); }
   }
 
+  // request notification permission on mount
+  useEffect(() => {
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
   // connect SSE immediately after match starts
   useEffect(() => {
     if (!liveMatchId) return;
@@ -114,6 +129,11 @@ export default function ArenaPage() {
           setLiveDone(true);
           es.close();
           reload();
+          // browser notification
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            const score = liveProgress ? `${liveProgress.score_a} : ${liveProgress.score_b}` : "";
+            new Notification(`比赛 #${liveMatchId} 已结束`, { body: `${matchA} vs ${matchB} ${score}`, icon: "/favicon.ico" });
+          }
           return;
         }
         setLiveProgress(data);
@@ -515,30 +535,67 @@ export default function ArenaPage() {
               <div style={{ display: "grid", gap: 10 }}>
                 {bots.map((b) => {
                   const h = health[String(b.id)];
+                  const isEditing = editingBotId === b.id;
                   return (
-                  <div key={b.id} className="event-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <HealthDot health={h} />
-                      <div>
-                        <strong>{b.name}</strong>
-                        <span style={{ display: "block", color: "var(--muted)", fontSize: "0.8rem", marginTop: 2 }}>{b.owner} · {b.url}</span>
+                  <div key={b.id} className="event-card" style={{ padding: "12px 14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <HealthDot health={h} />
+                        <div>
+                          <strong>{b.name}</strong>
+                          <span style={{ display: "block", color: "var(--muted)", fontSize: "0.8rem", marginTop: 2 }}>{b.owner} · {b.url}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {h && <span style={{ fontSize: "0.7rem", color: h.online ? "var(--alpha)" : "var(--muted)" }}>{h.online ? `${h.latency_ms}ms` : "离线"}</span>}
+                        <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>#{b.id}</span>
+                        <button
+                          onClick={() => { setEditingBotId(isEditing ? null : b.id); setEditBotName(b.name); setEditBotUrl(b.url); setEditBotOwner(b.owner); setEditBotMsg(""); }}
+                          style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.72rem", padding: "2px 8px", cursor: "pointer" }}
+                        >
+                          {isEditing ? "取消" : "编辑"}
+                        </button>
+                        {adminToken && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`确认删除 ${b.name}？`)) return;
+                              try { await deleteBot(b.id, adminToken || undefined); reload(); } catch (err: any) { alert("删除失败: " + err.message); }
+                            }}
+                            style={{ background: "none", border: "1px solid var(--danger, #ff4d6a)", borderRadius: 8, color: "var(--danger, #ff4d6a)", fontSize: "0.72rem", padding: "2px 8px", cursor: "pointer" }}
+                          >
+                            删除
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      {h && <span style={{ fontSize: "0.7rem", color: h.online ? "var(--alpha)" : "var(--muted)" }}>{h.online ? `${h.latency_ms}ms` : "离线"}</span>}
-                      <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>#{b.id}</span>
-                      {adminToken && (
+                    {isEditing && (
+                      <div style={{ marginTop: 10, display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr 1fr auto", alignItems: "end" }}>
+                        <label style={{ display: "grid", gap: 2 }}>
+                          <span style={{ color: "var(--muted)", fontSize: "0.68rem" }}>名称</span>
+                          <input value={editBotName} onChange={e => setEditBotName(e.target.value)} style={{ ...inputStyle, padding: "6px 10px", fontSize: "0.82rem" }} />
+                        </label>
+                        <label style={{ display: "grid", gap: 2 }}>
+                          <span style={{ color: "var(--muted)", fontSize: "0.68rem" }}>URL</span>
+                          <input value={editBotUrl} onChange={e => setEditBotUrl(e.target.value)} style={{ ...inputStyle, padding: "6px 10px", fontSize: "0.82rem" }} />
+                        </label>
+                        <label style={{ display: "grid", gap: 2 }}>
+                          <span style={{ color: "var(--muted)", fontSize: "0.68rem" }}>Owner</span>
+                          <input value={editBotOwner} onChange={e => setEditBotOwner(e.target.value)} style={{ ...inputStyle, padding: "6px 10px", fontSize: "0.82rem" }} />
+                        </label>
                         <button
                           onClick={async () => {
-                            if (!confirm(`确认删除 ${b.name}？`)) return;
-                            try { await deleteBot(b.id, adminToken || undefined); reload(); } catch (err: any) { alert("删除失败: " + err.message); }
+                            try {
+                              await updateBot(b.id, { name: editBotName, url: editBotUrl, owner: editBotOwner });
+                              setEditBotMsg("已保存"); setEditingBotId(null); reload();
+                            } catch (err: any) { setEditBotMsg("失败: " + err.message); }
                           }}
-                          style={{ background: "none", border: "1px solid var(--danger, #ff4d6a)", borderRadius: 8, color: "var(--danger, #ff4d6a)", fontSize: "0.76rem", padding: "2px 10px", cursor: "pointer" }}
+                          style={{ background: "rgba(25,225,255,0.1)", border: "1px solid var(--alpha)", borderRadius: 8, color: "var(--alpha)", fontSize: "0.76rem", padding: "6px 14px", cursor: "pointer" }}
                         >
-                          删除
+                          保存
                         </button>
-                      )}
-                    </div>
+                        {editBotMsg && <span style={{ fontSize: "0.76rem", color: "var(--muted)", gridColumn: "1/-1" }}>{editBotMsg}</span>}
+                      </div>
+                    )}
                   </div>
                   );
                 })}
@@ -628,6 +685,11 @@ function MatchRow({ match: m, onDelete, isAdmin }: { match: Match; onDelete: (id
           {m.status}{m.status === "running" && elapsed ? ` ${elapsed}` : ""}
         </span>
         <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>seed={m.seed}</span>
+        {m.status === "done" && m.slow_turns != null && m.slow_turns > 0 && (
+          <span style={{ fontSize: "0.64rem", color: "var(--danger, #ff4d6a)", border: "1px solid rgba(255,77,106,0.3)", borderRadius: 6, padding: "1px 6px" }} title={`${m.slow_turns} 个回合超过 400ms`}>
+            慢{m.slow_turns}
+          </span>
+        )}
         {m.status === "done" && (
           <a
             href={`/?seed=${m.seed}&botA=${encodeURIComponent(m.bot_a_name)}&botB=${encodeURIComponent(m.bot_b_name)}`}

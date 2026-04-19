@@ -107,6 +107,29 @@ func handleBotHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, result)
 }
 
+// ── zombie match reaper ─────────────────────────────────────────────────────
+
+func startZombieReaper() {
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			res, err := db.Exec(`UPDATE matches SET status='error', finished_at=CURRENT_TIMESTAMP WHERE status='running' AND started_at < datetime('now', '-10 minutes')`)
+			if err != nil {
+				log.Printf("[reaper] error: %v", err)
+				continue
+			}
+			if n, _ := res.RowsAffected(); n > 0 {
+				log.Printf("[reaper] killed %d zombie matches (running > 10min)", n)
+				matchQueueMu.Lock()
+				runningCount = max(0, runningCount-int(n))
+				matchQueueMu.Unlock()
+				go drainQueue()
+			}
+		}
+	}()
+}
+
 // ── match queue ─────────────────────────────────────────────────────────────
 
 const maxRunningMatches = 10
@@ -269,6 +292,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /bots", handleRegisterBot)
 	mux.HandleFunc("GET /bots", handleListBots)
+	mux.HandleFunc("PUT /bots/{id}", handleUpdateBot)
 	mux.HandleFunc("DELETE /bots/{id}", handleDeleteBot)
 	mux.HandleFunc("POST /matches", handleStartMatch)
 	mux.HandleFunc("GET /matches", handleListMatches)
@@ -289,6 +313,7 @@ func main() {
 	mux.HandleFunc("GET /bots/health", handleBotHealth)
 
 	startHealthProbe()
+	startZombieReaper()
 
 	port := "9090"
 	log.Printf("Arena API listening on :%s", port)
@@ -328,6 +353,7 @@ func initDB() {
 	db.Exec(`ALTER TABLE matches ADD COLUMN map_path TEXT`)
 	db.Exec(`ALTER TABLE matches ADD COLUMN latency_a INTEGER`)
 	db.Exec(`ALTER TABLE matches ADD COLUMN latency_b INTEGER`)
+	db.Exec(`ALTER TABLE matches ADD COLUMN slow_turns INTEGER DEFAULT 0`)
 
 	// maps table
 	db.Exec(`CREATE TABLE IF NOT EXISTS maps (
@@ -475,6 +501,50 @@ func handleRegisterBot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]any{"id": id, "name": req.Name})
 }
 
+// ── PUT /bots/{id} ──────────────────────────────────────────────────────────
+
+func handleUpdateBot(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, 400, "invalid id")
+		return
+	}
+	var req struct {
+		Name  string `json:"name"`
+		URL   string `json:"url"`
+		Owner string `json:"owner"`
+	}
+	if json.NewDecoder(r.Body).Decode(&req) != nil {
+		writeErr(w, 400, "invalid request body")
+		return
+	}
+	sets := []string{}
+	args := []any{}
+	if req.Name != "" {
+		sets = append(sets, "name=?")
+		args = append(args, req.Name)
+	}
+	if req.URL != "" {
+		sets = append(sets, "url=?")
+		args = append(args, strings.TrimSpace(req.URL))
+	}
+	if req.Owner != "" {
+		sets = append(sets, "owner=?")
+		args = append(args, req.Owner)
+	}
+	if len(sets) == 0 {
+		writeErr(w, 400, "nothing to update")
+		return
+	}
+	args = append(args, id)
+	_, err = db.Exec("UPDATE bots SET "+strings.Join(sets, ", ")+" WHERE id=?", args...)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
 // ── DELETE /bots/{id} ────────────────────────────────────────────────────────
 
 func handleDeleteBot(w http.ResponseWriter, r *http.Request) {
@@ -534,6 +604,7 @@ type Match struct {
 	ReplayPath *string `json:"replay_path"`
 	LatencyA   *int    `json:"latency_a"`
 	LatencyB   *int    `json:"latency_b"`
+	SlowTurns  *int    `json:"slow_turns"`
 	StartedAt  string  `json:"started_at"`
 	FinishedAt *string `json:"finished_at"`
 }
@@ -765,12 +836,12 @@ func runMatch(matchID int64, botAURL, botBURL string, seed int64, mapPath string
 		return
 	}
 
-	// parse last line: "Done  winner=Alpha  alpha=1234  beta=987  replay=..."
-	winner, scoreA, scoreB, replayPath := parseRunnerOutput(out)
-	log.Printf("[match %d] DONE in %s: winner=%s score=%d-%d replay=%s", matchID, elapsed, winner, scoreA, scoreB, replayPath)
+	// parse last line: "Done  winner=Alpha  alpha=1234  beta=987  replay=...  slow=N"
+	winner, scoreA, scoreB, replayPath, slowTurns := parseRunnerOutput(out)
+	log.Printf("[match %d] DONE in %s: winner=%s score=%d-%d replay=%s slow=%d", matchID, elapsed, winner, scoreA, scoreB, replayPath, slowTurns)
 	db.Exec(
-		`UPDATE matches SET status='done', winner=?, score_a=?, score_b=?, replay_path=?, finished_at=CURRENT_TIMESTAMP WHERE id=?`,
-		winner, scoreA, scoreB, replayPath, matchID,
+		`UPDATE matches SET status='done', winner=?, score_a=?, score_b=?, replay_path=?, slow_turns=?, finished_at=CURRENT_TIMESTAMP WHERE id=?`,
+		winner, scoreA, scoreB, replayPath, slowTurns, matchID,
 	)
 }
 
@@ -802,19 +873,20 @@ func (w *stderrWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func parseRunnerOutput(out string) (winner string, scoreA, scoreB int, replayPath string) {
+func parseRunnerOutput(out string) (winner string, scoreA, scoreB int, replayPath string, slowTurns int) {
 	// scan for the "Done" line
 	lines := splitLines(out)
 	for _, line := range lines {
 		var w string
 		var a, b int
 		var rp string
-		n, _ := fmt.Sscanf(line, "Done  winner=%s  alpha=%d  beta=%d  replay=%s", &w, &a, &b, &rp)
-		if n == 4 {
-			return w, a, b, rp
+		var slow int
+		n, _ := fmt.Sscanf(line, "Done  winner=%s  alpha=%d  beta=%d  replay=%s  slow=%d", &w, &a, &b, &rp, &slow)
+		if n >= 4 {
+			return w, a, b, rp, slow
 		}
 	}
-	return "", 0, 0, ""
+	return "", 0, 0, "", 0
 }
 
 func splitLines(s string) []string {
@@ -838,7 +910,7 @@ func handleListMatches(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query(`
 		SELECT m.id, m.bot_a_id, m.bot_b_id, ba.name, bb.name,
 		       m.seed, m.map_path, m.status, m.winner, m.score_a, m.score_b,
-		       m.replay_path, m.latency_a, m.latency_b, m.started_at, m.finished_at
+		       m.replay_path, m.latency_a, m.latency_b, m.slow_turns, m.started_at, m.finished_at
 		FROM matches m
 		JOIN bots ba ON ba.id = m.bot_a_id
 		JOIN bots bb ON bb.id = m.bot_b_id
@@ -854,7 +926,7 @@ func handleListMatches(w http.ResponseWriter, r *http.Request) {
 		var m Match
 		rows.Scan(&m.ID, &m.BotAID, &m.BotBID, &m.BotAName, &m.BotBName,
 			&m.Seed, &m.MapPath, &m.Status, &m.Winner, &m.ScoreA, &m.ScoreB,
-			&m.ReplayPath, &m.LatencyA, &m.LatencyB, &m.StartedAt, &m.FinishedAt)
+			&m.ReplayPath, &m.LatencyA, &m.LatencyB, &m.SlowTurns, &m.StartedAt, &m.FinishedAt)
 		matches = append(matches, m)
 	}
 	writeJSON(w, 200, matches)
@@ -873,14 +945,14 @@ func handleGetMatch(w http.ResponseWriter, r *http.Request) {
 	err = db.QueryRow(`
 		SELECT m.id, m.bot_a_id, m.bot_b_id, ba.name, bb.name,
 		       m.seed, m.map_path, m.status, m.winner, m.score_a, m.score_b,
-		       m.replay_path, m.latency_a, m.latency_b, m.started_at, m.finished_at
+		       m.replay_path, m.latency_a, m.latency_b, m.slow_turns, m.started_at, m.finished_at
 		FROM matches m
 		JOIN bots ba ON ba.id = m.bot_a_id
 		JOIN bots bb ON bb.id = m.bot_b_id
 		WHERE m.id = ?
 	`, id).Scan(&m.ID, &m.BotAID, &m.BotBID, &m.BotAName, &m.BotBName,
 		&m.Seed, &m.MapPath, &m.Status, &m.Winner, &m.ScoreA, &m.ScoreB,
-		&m.ReplayPath, &m.LatencyA, &m.LatencyB, &m.StartedAt, &m.FinishedAt)
+		&m.ReplayPath, &m.LatencyA, &m.LatencyB, &m.SlowTurns, &m.StartedAt, &m.FinishedAt)
 	if err == sql.ErrNoRows {
 		writeErr(w, 404, "match not found")
 		return
