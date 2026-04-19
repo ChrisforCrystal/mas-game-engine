@@ -9,6 +9,9 @@ import {
   drawTiles, drawGrid, drawSpawns,
 } from "@/lib/map-renderer";
 
+type PaintTool = "#" | "." | "A" | "B" | "0" | "^" | "v" | "<" | ">";
+type EditorSnapshot = { layout: string; cabinets: string };
+
 export default function MapsPage() {
   const [maps, setMaps] = useState<MapInfo[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -23,9 +26,13 @@ export default function MapsPage() {
   const [editCabinets, setEditCabinets] = useState("");
   const [editMsg, setEditMsg] = useState("");
   const [creating, setCreating] = useState(false);
+  const [paintTool, setPaintTool] = useState<PaintTool>(".");
+  const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
 
   // preview from editor input
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const editorHistoryRef = useRef<EditorSnapshot[]>([]);
+  const editorHistoryIndexRef = useRef(-1);
 
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
@@ -66,13 +73,16 @@ export default function MapsPage() {
 
   function startEdit() {
     if (!detail || !selectedId) return;
+    const nextLayout = detail.layout.join("\n");
+    const nextCabinets = JSON.stringify(detail.cabinets, null, 2);
     setEditName(detail.name);
     setEditDesc(detail.description);
-    setEditLayout(detail.layout.join("\n"));
-    setEditCabinets(JSON.stringify(detail.cabinets, null, 2));
+    setEditLayout(nextLayout);
+    setEditCabinets(nextCabinets);
     setEditMsg("");
     setEditing(true);
     setCreating(false);
+    resetEditorHistory(nextLayout, nextCabinets);
   }
 
   function startCreate() {
@@ -85,23 +95,25 @@ export default function MapsPage() {
     setEditing(false);
     setSelectedId(null);
     setDetail(null);
+    resetEditorHistory("", "{}");
   }
 
   async function handleSave() {
-    const lines = editLayout.split("\n").filter(l => l.length > 0);
-    if (!editName || lines.length === 0) { setEditMsg("名称和布局不能为空"); return; }
-    let cabs: Record<string, number> = {};
-    try { cabs = JSON.parse(editCabinets || "{}"); } catch { setEditMsg("机柜 JSON 格式错误"); return; }
+    const validation = validateEditorMap(editName, editLayout, editCabinets);
+    if (!validation.ok) {
+      setEditMsg(validation.message);
+      return;
+    }
 
     try {
       if (creating) {
-        const res = await createMap({ name: editName, description: editDesc, layout: lines, cabinets: cabs });
+        const res = await createMap({ name: editName, description: editDesc, layout: validation.lines, cabinets: validation.cabinets });
         setEditMsg("创建成功");
         setCreating(false);
         await reload();
         setSelectedId(res.id);
       } else if (editing && selectedId) {
-        await updateMap(selectedId, { name: editName, description: editDesc, layout: lines, cabinets: cabs });
+        await updateMap(selectedId, { name: editName, description: editDesc, layout: validation.lines, cabinets: validation.cabinets });
         setEditMsg("保存成功");
         setEditing(false);
         fetchMapDetail(selectedId).then(setDetail);
@@ -109,6 +121,83 @@ export default function MapsPage() {
     } catch (err: any) {
       setEditMsg("失败: " + err.message);
     }
+  }
+
+  function syncHistoryState() {
+    const index = editorHistoryIndexRef.current;
+    setHistoryState({
+      canUndo: index > 0,
+      canRedo: index >= 0 && index < editorHistoryRef.current.length - 1,
+    });
+  }
+
+  function resetEditorHistory(layout: string, cabinets: string) {
+    editorHistoryRef.current = [{ layout, cabinets }];
+    editorHistoryIndexRef.current = 0;
+    setHistoryState({ canUndo: false, canRedo: false });
+  }
+
+  function pushEditorSnapshot(next: EditorSnapshot) {
+    const index = editorHistoryIndexRef.current;
+    const current = editorHistoryRef.current[index];
+    if (current?.layout === next.layout && current?.cabinets === next.cabinets) return;
+
+    const base = index >= 0 ? editorHistoryRef.current.slice(0, index + 1) : [];
+    const history = [...base, next].slice(-80);
+    editorHistoryRef.current = history;
+    editorHistoryIndexRef.current = history.length - 1;
+    syncHistoryState();
+  }
+
+  function updateEditorLayout(nextLayout: string) {
+    if (nextLayout === editLayout) return;
+    setEditLayout(nextLayout);
+    setEditMsg("");
+    pushEditorSnapshot({ layout: nextLayout, cabinets: editCabinets });
+  }
+
+  function updateEditorCabinets(nextCabinets: string) {
+    if (nextCabinets === editCabinets) return;
+    setEditCabinets(nextCabinets);
+    setEditMsg("");
+    pushEditorSnapshot({ layout: editLayout, cabinets: nextCabinets });
+  }
+
+  function restoreEditorSnapshot(index: number) {
+    const snapshot = editorHistoryRef.current[index];
+    if (!snapshot) return;
+    editorHistoryIndexRef.current = index;
+    setEditLayout(snapshot.layout);
+    setEditCabinets(snapshot.cabinets);
+    setEditMsg("");
+    syncHistoryState();
+  }
+
+  function handleUndo() {
+    const index = editorHistoryIndexRef.current;
+    if (index <= 0) return;
+    restoreEditorSnapshot(index - 1);
+  }
+
+  function handleRedo() {
+    const index = editorHistoryIndexRef.current;
+    if (index < 0 || index >= editorHistoryRef.current.length - 1) return;
+    restoreEditorSnapshot(index + 1);
+  }
+
+  function handlePreviewPaint(e: React.MouseEvent<HTMLCanvasElement>) {
+    const canvas = previewCanvasRef.current;
+    if (!canvas || editWidth <= 0 || editHeight <= 0 || hasUnevenRows) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor(((e.clientX - rect.left) / rect.width) * editWidth);
+    const y = Math.floor(((e.clientY - rect.top) / rect.height) * editHeight);
+    if (x < 0 || y < 0 || x >= editWidth || y >= editHeight) return;
+
+    const lines = editLines.map(line => line.split(""));
+    if (!lines[y] || x >= lines[y].length || lines[y][x] === paintTool) return;
+    lines[y][x] = paintTool;
+    updateEditorLayout(lines.map(line => line.join("")).join("\n"));
   }
 
   async function handleDelete() {
@@ -210,15 +299,15 @@ export default function MapsPage() {
                   <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>地图布局</span>
                 <textarea
                   value={editLayout}
-                  onChange={e => setEditLayout(e.target.value)}
+                  onChange={e => updateEditorLayout(e.target.value)}
                     spellCheck={false}
                     style={{ ...inputStyle, fontFamily: "monospace", fontSize: "0.74rem", minHeight: 390, resize: "vertical", lineHeight: 1.24, whiteSpace: "pre", overflow: "auto" }}
-                  placeholder={"##########\n#AAAA...#\n#........#\n#...0....#\n#........#\n#...BBBB.#\n##########"}
+                  placeholder={"###########\n#AAAAA....#\n#.........#\n#....0....#\n#.........#\n#....BBBBB#\n###########"}
                 />
               </label>
             <label style={{ display: "grid", gap: 4 }}>
                   <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>机柜容量 JSON</span>
-              <input value={editCabinets} onChange={e => setEditCabinets(e.target.value)} style={{ ...inputStyle, fontFamily: "monospace" }} placeholder='{"0": 3000}' />
+              <input value={editCabinets} onChange={e => updateEditorCabinets(e.target.value)} style={{ ...inputStyle, fontFamily: "monospace" }} placeholder='{"0": 3000}' />
                   <span style={helperTextStyle}>示例：布局里有 0 和 1，就填写 {`{"0": 3000, "1": 3000}`}。</span>
             </label>
               </div>
@@ -227,9 +316,35 @@ export default function MapsPage() {
                   <span style={{ color: "var(--text)", fontSize: "0.86rem", fontWeight: 700 }}>实时预览</span>
                   <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>完整地图自适应显示</span>
                 </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ color: "var(--muted)", fontSize: "0.76rem" }}>绘制工具</span>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={handleUndo} disabled={!historyState.canUndo} className="control-button" style={historyButtonStyle(!historyState.canUndo)}>撤销</button>
+                      <button onClick={handleRedo} disabled={!historyState.canRedo} className="control-button" style={historyButtonStyle(!historyState.canRedo)}>重做</button>
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(84px, 1fr))", gap: 8 }}>
+                    {paintTools.map(tool => (
+                      <button
+                        key={tool.value}
+                        type="button"
+                        onClick={() => setPaintTool(tool.value)}
+                        className="control-button"
+                        style={paintToolButtonStyle(paintTool === tool.value)}
+                      >
+                        <code style={{ fontFamily: "monospace", color: paintTool === tool.value ? "var(--alpha)" : "var(--text)" }}>{tool.value}</code>
+                        <span>{tool.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {hasUnevenRows && (
+                    <span style={{ color: "var(--danger)", fontSize: "0.76rem" }}>行宽不一致时暂不支持点击绘制，请先整理每行长度。</span>
+                  )}
+                </div>
                 <div style={previewFrameStyle}>
                   {editLines.length > 0 ? (
-                    <canvas ref={previewCanvasRef} />
+                    <canvas ref={previewCanvasRef} onClick={handlePreviewPaint} style={{ cursor: hasUnevenRows ? "not-allowed" : "crosshair" }} />
                   ) : (
                     <div style={{ color: "var(--muted)", fontSize: "0.82rem" }}>输入地图布局后显示预览</div>
                   )}
@@ -251,7 +366,7 @@ export default function MapsPage() {
               <button onClick={() => { setEditing(false); setCreating(false); setEditMsg(""); }} className="control-button" style={{ color: "var(--muted)" }}>
                 取消
               </button>
-              {editMsg && <span style={{ color: "var(--muted)", fontSize: "0.84rem" }}>{editMsg}</span>}
+              {editMsg && <span style={{ color: editMsg.startsWith("失败") || editMsg.includes("请") || editMsg.includes("错误") || editMsg.includes("非法") ? "var(--danger)" : "var(--muted)", fontSize: "0.84rem" }}>{editMsg}</span>}
             </div>
           </div>
         )}
@@ -345,6 +460,75 @@ function renderMap(canvas: HTMLCanvasElement, detail: MapDetail, options?: { fit
   drawSpawns(ctx, spawns);
 }
 
+function validateEditorMap(name: string, layout: string, cabinetsText: string): { ok: true; lines: string[]; cabinets: Record<string, number> } | { ok: false; message: string } {
+  const lines = layout.split("\n").map(line => line.replace(/\r/g, "")).filter(line => line.length > 0);
+  if (!name.trim() || lines.length === 0) {
+    return { ok: false, message: "请填写地图名称和地图布局。" };
+  }
+
+  const width = lines[0]?.length ?? 0;
+  if (width === 0) {
+    return { ok: false, message: "地图布局不能为空行。" };
+  }
+
+  const unevenRow = lines.findIndex(line => line.length !== width);
+  if (unevenRow >= 0) {
+    return { ok: false, message: `第 ${unevenRow + 1} 行长度不一致，请保持所有行都是 ${width} 列。` };
+  }
+
+  const allowedChars = new Set("#.AB0123456789^v<>".split(""));
+  const invalidPositions: string[] = [];
+  let alphaSpawns = 0;
+  let betaSpawns = 0;
+  const cabinetChars = new Set<string>();
+
+  lines.forEach((line, y) => {
+    line.split("").forEach((ch, x) => {
+      if (!allowedChars.has(ch)) invalidPositions.push(`${x + 1},${y + 1}:${ch}`);
+      if (ch === "A") alphaSpawns += 1;
+      if (ch === "B") betaSpawns += 1;
+      if (/^[0-9]$/.test(ch)) cabinetChars.add(ch);
+    });
+  });
+
+  if (invalidPositions.length > 0) {
+    return { ok: false, message: `发现非法字符 ${invalidPositions.slice(0, 4).join("、")}，只支持 # . A B 0-9 ^ v < >。` };
+  }
+
+  if (alphaSpawns < 5 || betaSpawns < 5) {
+    return { ok: false, message: `A/B 出生点至少各 5 个；当前 A=${alphaSpawns}，B=${betaSpawns}。` };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cabinetsText || "{}");
+  } catch {
+    return { ok: false, message: "机柜容量 JSON 格式错误，请使用类似 {\"0\": 3000} 的格式。" };
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, message: "机柜容量 JSON 必须是对象，例如 {\"0\": 3000}。" };
+  }
+
+  const cabinets: Record<string, number> = {};
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!/^[0-9]$/.test(key)) {
+      return { ok: false, message: `机柜键 ${key} 无效，请使用 0-9 单个数字。` };
+    }
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      return { ok: false, message: `机柜 ${key} 的容量必须是大于 0 的数字。` };
+    }
+    cabinets[key] = value;
+  }
+
+  const missingCabinets = [...cabinetChars].filter(ch => !(ch in cabinets));
+  if (missingCabinets.length > 0) {
+    return { ok: false, message: `布局里有机柜 ${missingCabinets.join("、")}，请在机柜容量 JSON 中配置容量。` };
+  }
+
+  return { ok: true, lines, cabinets };
+}
+
 const inputStyle: React.CSSProperties = {
   background: "rgba(7,18,31,0.9)",
   border: "1px solid var(--line-strong)",
@@ -362,6 +546,18 @@ const layoutLegendItems = [
   { code: "B", label: "Beta 出生点" },
   { code: "0-9", label: "机柜：需配置容量" },
   { code: "^ v < >", label: "传送带方向" },
+];
+
+const paintTools: { value: PaintTool; label: string }[] = [
+  { value: ".", label: "空地" },
+  { value: "#", label: "墙" },
+  { value: "A", label: "Alpha" },
+  { value: "B", label: "Beta" },
+  { value: "0", label: "机柜" },
+  { value: "^", label: "上" },
+  { value: "v", label: "下" },
+  { value: "<", label: "左" },
+  { value: ">", label: "右" },
 ];
 
 const editorHelpStyle: React.CSSProperties = {
@@ -432,3 +628,27 @@ const ruleChipStyle: React.CSSProperties = {
   color: "var(--muted)",
   fontSize: "0.72rem",
 };
+
+function historyButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: "5px 10px",
+    fontSize: "0.72rem",
+    color: disabled ? "rgba(158,180,203,0.42)" : "var(--muted)",
+    opacity: disabled ? 0.55 : 1,
+    cursor: disabled ? "not-allowed" : "pointer",
+  };
+}
+
+function paintToolButtonStyle(active: boolean): React.CSSProperties {
+  return {
+    display: "flex",
+    justifyContent: "center",
+    gap: 6,
+    alignItems: "center",
+    padding: "7px 8px",
+    fontSize: "0.72rem",
+    background: active ? "rgba(25,225,255,0.12)" : "rgba(7,18,31,0.9)",
+    borderColor: active ? "var(--alpha)" : "var(--line-strong)",
+    color: active ? "var(--alpha)" : "var(--muted)",
+  };
+}
